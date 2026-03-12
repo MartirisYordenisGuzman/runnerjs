@@ -338,56 +338,71 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
       </div>
 
       {/* Input */}
-      <div style={{ 
-        padding: '16px', 
-        borderTop: '1px solid var(--border-color)',
-        display: 'flex',
-        gap: '8px'
-      }}>
-        <textarea 
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder="Enter a prompt here..."
-          style={{ 
-            flex: 1,
-            backgroundColor: 'var(--bg-primary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            padding: '10px 12px',
-            color: 'var(--text-primary)',
-            fontSize: '13px',
-            resize: 'none',
-            outline: 'none',
-            minHeight: '40px',
-            maxHeight: '120px'
-          }}
-          rows={1}
-        />
-        <button 
-          onClick={handleSend}
-          disabled={!input.trim() || isLoading}
-          style={{ 
-            backgroundColor: input.trim() && !isLoading ? 'var(--accent-color)' : 'var(--bg-toolbar)',
-            color: input.trim() && !isLoading ? '#fff' : 'var(--text-muted)',
-            border: 'none',
-            borderRadius: '8px',
-            width: '40px',
-            height: '40px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: input.trim() && !isLoading ? 'pointer' : 'default',
-            transition: 'all 0.2s'
-          }}
+      <div style={{ padding: '16px', borderTop: '1px solid var(--border-color)' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: '8px',
+          backgroundColor: 'var(--bg-primary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '12px',
+          padding: '8px 12px',
+          transition: 'all 0.2s ease',
+          cursor: 'text'
+        }}
+        onFocusCapture={(e) => {
+          e.currentTarget.style.borderColor = 'var(--accent-color)';
+          e.currentTarget.style.boxShadow = '0 0 0 1px var(--accent-color)';
+        }}
+        onBlurCapture={(e) => {
+          e.currentTarget.style.borderColor = 'var(--border-color)';
+          e.currentTarget.style.boxShadow = 'none';
+        }}
         >
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-        </button>
+          <textarea 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Enter a prompt here..."
+            style={{ 
+              flex: 1,
+              backgroundColor: 'transparent',
+              border: 'none',
+              padding: '4px 0',
+              color: 'var(--text-primary)',
+              fontSize: '13px',
+              resize: 'none',
+              outline: 'none',
+              minHeight: '24px',
+              maxHeight: '160px',
+              fontFamily: 'inherit'
+            }}
+            rows={1}
+          />
+          <button 
+            onClick={handleSend}
+            disabled={!input.trim() || isLoading}
+            style={{ 
+              background: 'none',
+              border: 'none',
+              color: input.trim() && !isLoading ? 'var(--accent-color)' : 'var(--text-muted)',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: input.trim() && !isLoading ? 'pointer' : 'default',
+              transition: 'all 0.2s',
+              opacity: isLoading ? 0.5 : 1
+            }}
+          >
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+          </button>
+        </div>
       </div>
     </div>
   );
