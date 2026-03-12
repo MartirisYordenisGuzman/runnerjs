@@ -164,7 +164,13 @@ export class SandboxService {
                   ['log', 'warn', 'error', 'info', 'debug'].includes(callee.property.name)
                 ) {
                   // Prepend { __runner_line: N } as the first argument
-                  const line = path.node.loc?.start.line || 0;
+                  let line = path.node.loc?.start.line || 0;
+                  
+                  // Fallback: Calculate line number manually if Babel's loc is missing
+                  if (line === 0 && typeof path.node.start === 'number' && typeof code === 'string') {
+                    line = code.substring(0, path.node.start).split('\n').length;
+                  }
+
                   if (line > 0) {
                     path.node.arguments.unshift(
                       t.objectExpression([

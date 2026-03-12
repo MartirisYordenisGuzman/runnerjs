@@ -234,7 +234,7 @@ export function ConsolePanel({
           if (log.type === 'info') { color = 'var(--color-info)'; badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeText = 'INFO'; }
           if (log.type === 'log') { color = isCaptured ? 'var(--text-muted)' : 'var(--color-log)'; }
 
-          const topOffset = matchLines && log.line ? (log.line - 1) * finalLineHeight : undefined;
+          const topOffset = matchLines && log.line ? ((log.line - 1) * finalLineHeight) + 16 : undefined;
 
           return (
             <div key={k} className={`log-entry ${log.type}`} style={{ 
