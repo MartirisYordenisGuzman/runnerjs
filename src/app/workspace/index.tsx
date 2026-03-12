@@ -161,9 +161,10 @@ interface MenuItemProps {
   isSeparator?: boolean;
   palette?: string[];
   icon?: React.ReactNode;
+  isActive?: boolean;
 }
 
-const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, isChecked, isDot, isSeparator, palette, icon }: MenuItemProps) => {
+const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, isChecked, isDot, isSeparator, palette, icon, isActive }: MenuItemProps) => {
   const [isHovered, setIsHovered] = useState(false);
   
   if (isSeparator) {
@@ -178,7 +179,7 @@ const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, is
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center',
-        backgroundColor: isHovered ? 'var(--bg-item-hover)' : 'transparent',
+        backgroundColor: (isHovered || isActive) ? 'var(--bg-item-hover)' : 'transparent',
         transition: 'background-color 0.1s ease',
         borderRadius: '4px',
         margin: '0 4px',
@@ -219,7 +220,7 @@ const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, is
           {name}
         </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '24px', whiteSpace: 'nowrap', paddingRight: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '16px', whiteSpace: 'nowrap', paddingRight: '4px' }}>
         {shortcut && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px' }}>{shortcut}</span>}
         {hasSubmenu && <ChevronRight size={13} color="var(--text-muted)" />}
       </div>
@@ -238,7 +239,7 @@ interface SubmenuProps {
 const SubmenuContainer = ({ top, left, children, onMouseEnter }: SubmenuProps) => (
   <div 
     style={{
-      position: 'fixed', top, left, width: 'fit-content', minWidth: '220px',
+      position: 'fixed', top, left, width: 'fit-content', minWidth: '180px',
       backgroundColor: 'var(--bg-menu)', 
       borderRadius: '8px', 
       boxShadow: '0 10px 40px rgba(0,0,0,0.6), 0 0 0 1px var(--border-color)',
@@ -806,13 +807,20 @@ export function Workspace() {
       {isMenuOpen && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setIsMenuOpen(false)} />
-          <div style={{ position: 'fixed', top: '40px', left: '56px', width: 'fit-content', minWidth: '160px', backgroundColor: 'var(--bg-menu)', borderRadius: '8px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', zIndex: 50, padding: '8px 4px' }}>
+          <div style={{ position: 'fixed', top: '40px', left: '56px', width: 'fit-content', minWidth: '140px', backgroundColor: 'var(--bg-menu)', borderRadius: '8px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', zIndex: 50, padding: '8px 4px' }}>
             {['File', 'Edit', 'Action', 'Tools', 'View', 'Themes', 'Window', 'Help'].map(item => (
-              <MenuItem key={item} name={item} hasSubmenu onMouseEnter={() => setActiveSubmenu(item)} color={(item === 'Action') ? '#eab308' : undefined} />
+              <MenuItem 
+                key={item} 
+                name={item} 
+                hasSubmenu 
+                onMouseEnter={() => setActiveSubmenu(item)} 
+                color={(item === 'Action') ? '#eab308' : undefined} 
+                isActive={activeSubmenu?.startsWith(item)}
+              />
             ))}
           </div>
           {activeSubmenu?.startsWith('File') && (
-            <SubmenuContainer top="40px" left="256px" onMouseEnter={() => setActiveSubmenu('File')}>
+            <SubmenuContainer top="40px" left="200px" onMouseEnter={() => setActiveSubmenu('File')}>
               <MenuItem name="New Tab" shortcut="Ctrl+T" onClick={createNewTab} />
               <MenuItem name="Re-open Closed Tab" shortcut="Ctrl+Shift+T" />
               <MenuItem name="Open..." shortcut="Ctrl+O" onClick={handleOpenFile} />
@@ -822,14 +830,13 @@ export function Workspace() {
               <MenuItem isSeparator />
               <MenuItem name="Settings..." shortcut="Ctrl+," onClick={() => setIsSettingsModalOpen(true)} />
               <MenuItem isSeparator />
-              <MenuItem name="Manage License..." />
               <MenuItem isSeparator />
               <MenuItem name="Close Tab" shortcut="Ctrl+W" onClick={() => handleConfirmCloseTab(activeTabId)} />
               <MenuItem name="Exit" onClick={() => window.electronAPI.windowControls('close')} />
             </SubmenuContainer>
           )}
           {activeSubmenu?.startsWith('Edit') && (
-            <SubmenuContainer top="80px" left="256px" onMouseEnter={() => setActiveSubmenu('Edit')}>
+            <SubmenuContainer top="80px" left="200px" onMouseEnter={() => setActiveSubmenu('Edit')}>
               <MenuItem name="Undo" shortcut="Ctrl+Z" onClick={() => executeEditorCommand('undo')} />
               <MenuItem name="Redo" shortcut="Ctrl+Shift+Z" onClick={() => executeEditorCommand('redo')} />
               <MenuItem isSeparator />
@@ -847,7 +854,7 @@ export function Workspace() {
             </SubmenuContainer>
           )}
           {activeSubmenu?.startsWith('Action') && (
-            <SubmenuContainer top="120px" left="256px" onMouseEnter={() => setActiveSubmenu('Action')}>
+            <SubmenuContainer top="120px" left="200px" onMouseEnter={() => setActiveSubmenu('Action')}>
               <MenuItem name="Run" shortcut="Ctrl+R" icon={<Play size={13} fill="currentColor" />} onClick={() => runCode(activeTab.code, activeTabId, true)} />
               <MenuItem name="Stop" shortcut="Ctrl+Shift+R" icon={<Square size={11} fill="currentColor" />} onClick={stopCode} />
               <MenuItem name="Kill" shortcut="Ctrl+K" onClick={stopCode} />
@@ -858,7 +865,7 @@ export function Workspace() {
             </SubmenuContainer>
           )}
           {activeSubmenu?.startsWith('Tools') && (
-            <SubmenuContainer top="160px" left="256px" onMouseEnter={() => setActiveSubmenu('Tools')}>
+            <SubmenuContainer top="160px" left="200px" onMouseEnter={() => setActiveSubmenu('Tools')}>
               <MenuItem name="Snippets" shortcut="Ctrl+B" onClick={() => setIsSnippetsModalOpen(true)} />
               <MenuItem name="Environment Variables" onClick={() => setIsEnvVarsModalOpen(true)} />
               <MenuItem name="NPM Packages" shortcut="Ctrl+I" onClick={() => setIsNpmModalOpen(true)} />
@@ -866,7 +873,7 @@ export function Workspace() {
             </SubmenuContainer>
           )}
           {activeSubmenu?.startsWith('View') && (
-            <SubmenuContainer top="200px" left="256px" onMouseEnter={() => setActiveSubmenu('View')}>
+            <SubmenuContainer top="200px" left="200px" onMouseEnter={() => setActiveSubmenu('View')}>
               <MenuItem name="Actual Size" shortcut="Ctrl+0" onClick={() => { handleZoom('reset'); setSettings(prev => ({ ...prev, appearance: { ...prev.appearance, fontSize: 14 } })); }} />
               <MenuItem name="Increase Font Size" shortcut="Ctrl++" onClick={() => changeFontSize(1)} />
               <MenuItem name="Decrease Font Size" shortcut="Ctrl+-" onClick={() => changeFontSize(-1)} />
@@ -879,13 +886,13 @@ export function Workspace() {
             </SubmenuContainer>
           )}
           {activeSubmenu === 'View-Layout' && (
-            <SubmenuContainer top="396px" left="431px" onMouseEnter={() => setActiveSubmenu('View-Layout')}>
+            <SubmenuContainer top="396px" left="350px" onMouseEnter={() => setActiveSubmenu('View-Layout')}>
                 <MenuItem name="Horizontal" isChecked={layoutDirection === 'horizontal'} isDot icon={<Columns size={12} />} onClick={() => setLayoutDirection('horizontal')} />
                 <MenuItem name="Vertical" isChecked={layoutDirection === 'vertical'} isDot icon={<Rows size={12} />} onClick={() => setLayoutDirection('vertical')} />
             </SubmenuContainer>
           )}
           {activeSubmenu === 'Themes' && (
-            <SubmenuContainer top="240px" left="256px" onMouseEnter={() => setActiveSubmenu('Themes')}>
+            <SubmenuContainer top="240px" left="200px" onMouseEnter={() => setActiveSubmenu('Themes')}>
                 <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                     {ThemeRegistry.getAllThemes().map(t => (
                         <MenuItem 
@@ -904,14 +911,14 @@ export function Workspace() {
             </SubmenuContainer>
           )}
           {activeSubmenu === 'Window' && (
-            <SubmenuContainer top="280px" left="256px" onMouseEnter={() => setActiveSubmenu('Window')}>
+            <SubmenuContainer top="280px" left="200px" onMouseEnter={() => setActiveSubmenu('Window')}>
               <MenuItem name="Minimize" shortcut="Ctrl+M" onClick={() => window.electronAPI.windowControls('minimize')} />
               <MenuItem name="Maximize" shortcut="Ctrl+Shift+M" onClick={() => window.electronAPI.windowControls('maximize')} />
               <MenuItem name="Close" shortcut="Ctrl+W" onClick={() => window.electronAPI.windowControls('close')} />
             </SubmenuContainer>
           )}
           {activeSubmenu === 'Help' && (
-            <SubmenuContainer top="320px" left="256px" onMouseEnter={() => setActiveSubmenu('Help')}>
+            <SubmenuContainer top="320px" left="200px" onMouseEnter={() => setActiveSubmenu('Help')}>
               <MenuItem name="Welcome" />
               <MenuItem name="Documentation" />
               <MenuItem isSeparator />
