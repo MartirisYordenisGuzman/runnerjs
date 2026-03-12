@@ -180,7 +180,8 @@ const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, is
         justifyContent: 'space-between', 
         alignItems: 'center',
         backgroundColor: (isHovered || isActive) ? 'var(--bg-item-hover)' : 'transparent',
-        transition: 'background-color 0.1s ease',
+        filter: isActive ? 'brightness(1.5)' : 'none',
+        transition: 'all 0.1s ease',
         borderRadius: '4px',
         margin: '0 4px',
         minHeight: '26px'
@@ -212,9 +213,9 @@ const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, is
         )}
         <span style={{ 
           color: color || 'var(--text-primary)', 
-          fontWeight: isHovered ? 500 : 400,
+          fontWeight: (isHovered || isActive) ? 600 : 400,
           fontSize: '12px',
-          opacity: isHovered ? 1 : 0.85,
+          opacity: (isHovered || isActive) ? 1 : 0.85,
           whiteSpace: 'nowrap'
         }}>
           {name}
