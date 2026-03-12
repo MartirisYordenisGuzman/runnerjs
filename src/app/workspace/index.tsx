@@ -773,14 +773,26 @@ export function Workspace() {
         {isSidebarVisible && (
           <div style={{ width: '56px', backgroundColor: 'var(--bg-secondary)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0', flexShrink: 0 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <Play size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => runCode(activeTab.code, activeTabId, true)} />
-              <Square size={20} color="var(--text-muted)" style={{ cursor: isRunning ? 'pointer' : 'default', opacity: isRunning ? 1 : 0.4 }} onClick={isRunning ? stopCode : undefined} />
-              <Bookmark size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => setIsSnippetsModalOpen(true)} />
-              <Download size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => setIsNpmModalOpen(true)} />
-              <MessageSquare size={22} color={activeSidePane === 'chat' ? 'var(--accent-color)' : 'var(--text-muted)'} style={{ cursor: 'pointer' }} onClick={() => setActiveSidePane(activeSidePane === 'chat' ? null : 'chat')} />
+              <div style={{ cursor: 'pointer' }} onClick={() => runCode(activeTab.code, activeTabId, true)} title="Run (Ctrl+R)">
+                <Play size={20} color="var(--text-muted)" />
+              </div>
+              <div style={{ cursor: isRunning ? 'pointer' : 'default', opacity: isRunning ? 1 : 0.4 }} onClick={isRunning ? stopCode : undefined} title="Stop (Ctrl+Shift+R)">
+                <Square size={18} color="var(--text-muted)" />
+              </div>
+              <div style={{ cursor: 'pointer' }} onClick={() => setIsSnippetsModalOpen(true)} title="Snippets">
+                <Bookmark size={20} color="var(--text-muted)" />
+              </div>
+              <div style={{ cursor: 'pointer' }} onClick={() => setIsNpmModalOpen(true)} title="NPM Packages">
+                <Download size={20} color="var(--text-muted)" />
+              </div>
+              <div style={{ cursor: 'pointer' }} onClick={() => setActiveSidePane(activeSidePane === 'chat' ? null : 'chat')} title="AI Chat">
+                <MessageSquare size={20} color={activeSidePane === 'chat' ? 'var(--accent-color)' : 'var(--text-muted)'} />
+              </div>
             </div>
             <div style={{ marginTop: 'auto' }}>
-              <Settings size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => setIsSettingsModalOpen(true)} />
+              <div style={{ cursor: 'pointer' }} onClick={() => setIsSettingsModalOpen(true)} title="Settings (Ctrl+,)">
+                <Settings size={20} color="var(--text-muted)" />
+              </div>
             </div>
           </div>
         )}
