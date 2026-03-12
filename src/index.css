@@ -1,0 +1,200 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Dynamic Theme Variables (overridden by ThemeRegistry) */
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-toolbar: rgba(17, 17, 17, 0.8);
+  
+  --text-primary: #ededed;
+  --text-muted: #888888;
+  
+  --border-color: #222222;
+  --border-highlight: #333333;
+  --accent-color: #3b82f6;
+  
+  /* Log Colors */
+  --color-log: #a3a3a3;
+  --color-warn: #eab308;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+  --color-success: #22c55e;
+  
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Menlo', monospace;
+}
+
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+#root {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* React Split Gutter Styling */
+.gutter {
+  background-color: var(--border-color);
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  z-index: 10;
+}
+.gutter:hover {
+  background-color: var(--border-highlight);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
+}
+.gutter.gutter-horizontal {
+  cursor: col-resize;
+  width: 4px !important;
+}
+.gutter.gutter-vertical {
+  cursor: row-resize;
+  height: 4px !important;
+}
+
+/* Animations */
+@keyframes slideFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.log-entry {
+  animation: slideFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Premium Inputs */
+.settings-input {
+  transition: all 0.2s ease;
+  border: 1px solid var(--border-color) !important;
+}
+
+.settings-input:focus {
+  border-color: var(--accent-color) !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.settings-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px !important;
+}
+
+/* Monaco Glyph Markers */
+.error-marker::before {
+  content: "" !important;
+  background-color: #ef4444 !important;
+  border-radius: 50% !important;
+  width: 10px !important;
+  height: 10px !important;
+  display: block !important;
+  position: absolute !important;
+  top: 4px !important;
+  left: 4px !important;
+  box-shadow: 0 0 8px #ef4444 !important;
+}
+
+.warning-marker::before {
+  content: "" !important;
+  background-color: #eab308 !important;
+  border-radius: 50% !important;
+  width: 10px !important;
+  height: 10px !important;
+  display: block !important;
+  position: absolute !important;
+  top: 4px !important;
+  left: 4px !important;
+  box-shadow: 0 0 8px #eab308 !important;
+}
+
+.error-line-border {
+  border: 2px solid rgba(239, 68, 68, 0.8) !important;
+  background-color: rgba(239, 68, 68, 0.05) !important;
+  left: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Vim Status Bar Styling */
+.vim-status-bar {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  gap: 8px;
+}
+
+/* Mode Indicators */
+.vim-status-bar span:first-child {
+  color: var(--accent-color);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Command Input (the white box in screenshot) */
+.vim-status-bar input {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  border: none !important;
+  outline: none !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  padding: 0 !important;
+  margin-left: 4px !important;
+  width: auto !important;
+}
+
+.vim-notification {
+  background-color: var(--bg-toolbar) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-color) !important;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.5) !important;
+  border-radius: 4px;
+  padding: 4px 12px !important;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  backdrop-filter: blur(8px);
+}
