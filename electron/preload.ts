@@ -1,11 +1,11 @@
 import { ipcRenderer, contextBridge } from 'electron';
-import type { ConsoleLogMessage, ExecutionCompleteMessage, AppSettings, Snippet } from '../src/shared/ipc';
+import type { ConsoleLogMessage, ExecutionCompleteMessage, AppSettings, Snippet, SessionData, ChatMessage } from '../src/shared/ipc';
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld(
   'electronAPI', {
-    executeCode: (code: string, cwd?: string, env?: Record<string, string>) => ipcRenderer.invoke('execute-code', code, cwd, env),
+    executeCode: (code: string, settings: { build: AppSettings['build'], advanced: AppSettings['advanced'] }, cwd?: string, env?: Record<string, string>) => ipcRenderer.invoke('execute-code', code, settings, cwd, env),
     onExecutionComplete: (callback: (result: ExecutionCompleteMessage) => void) => ipcRenderer.on('execution-complete', (_event, value) => callback(value)),
     onConsoleOutput: (callback: (output: ConsoleLogMessage) => void) => ipcRenderer.on('console-output', (_event, value) => callback(value)),
     onWorkerStatus: (callback: (status: 'running' | 'stopped') => void) => ipcRenderer.on('worker-status', (_event, value) => callback(value)),
@@ -45,5 +45,15 @@ contextBridge.exposeInMainWorld(
     // Zoom
     setZoomFactor: (factor: number) => ipcRenderer.invoke('set-zoom-factor', factor),
     getZoomFactor: () => ipcRenderer.invoke('get-zoom-factor'),
+
+    // System Fonts
+    getSystemFonts: () => ipcRenderer.invoke('get-system-fonts'),
+
+    // Session
+    getSession: () => ipcRenderer.invoke('get-session'),
+    saveSession: (session: SessionData) => ipcRenderer.invoke('save-session', session),
+
+    // AI
+    askAI: (messages: ChatMessage[], settings: { model: string; apiKey: string; provider?: 'openai' | 'gemini' }) => ipcRenderer.invoke('ask-ai', messages, settings),
   }
 );

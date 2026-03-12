@@ -5,16 +5,47 @@ import * as https from 'https';
 
 import { SandboxService } from '../src/engine/sandbox';
 import { onConsoleLog, onWorkerStatus } from '../src/core/event-bus';
-import { AppSettings, Snippet } from '../src/shared/ipc';
+import { AppSettings, Snippet, SessionData, ChatMessage } from '../src/shared/ipc';
 
 let win: BrowserWindow | null = null;
+const SESSION_FILE = path.join(app.getPath('userData'), 'session.json');
 
-function createWindow() {
+async function loadSessionData(): Promise<SessionData | null> {
+  try {
+    const data = await fs.readFile(SESSION_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+async function saveSessionData(session: SessionData) {
+  try {
+    await fs.writeFile(SESSION_FILE, JSON.stringify(session, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('[Main] Failed to save session:', err);
+    return false;
+  }
+}
+
+async function createWindow() {
   console.log('[Main] Creating window...');
   
-  win = new BrowserWindow({
+  const session = await loadSessionData();
+  const windowState = session?.windowState || {
     width: 1200,
     height: 800,
+    isMaximized: false,
+    x: undefined as number | undefined,
+    y: undefined as number | undefined
+  };
+
+  win = new BrowserWindow({
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
     frame: false,
     backgroundColor: '#1e1e1e', // Match app background
     webPreferences: {
@@ -46,6 +77,42 @@ function createWindow() {
       console.error('[Main] Failed to load file:', err);
     });
   }
+
+  if (windowState.isMaximized) {
+    win.maximize();
+  }
+
+  const saveWindowState = async () => {
+    if (!win) return;
+    const isMaximized = win.isMaximized();
+    const bounds = isMaximized ? (session?.windowState || { width: 1200, height: 800, x: 0, y: 0 }) : win.getBounds();
+    
+    const currentSession = await loadSessionData() || {
+      tabs: [],
+      activeTabId: '',
+      layout: { 
+        sidebarVisible: true, 
+        outputVisible: true, 
+        layoutDirection: 'horizontal' as const,
+        splitSizes: [50, 50]
+      }
+    };
+
+    const newSession: SessionData = {
+      ...currentSession,
+      windowState: {
+        width: bounds.width,
+        height: bounds.height,
+        x: (bounds as any).x ?? 0,
+        y: (bounds as any).y ?? 0,
+        isMaximized
+      }
+    };
+    await saveSessionData(newSession);
+  };
+
+  win.on('resize', saveWindowState);
+  win.on('move', saveWindowState);
 
   win.on('closed', () => {
     win = null;
@@ -83,7 +150,7 @@ const SNIPPETS_FILE = path.join(app.getPath('userData'), 'snippets.json');
 const readSnippets = async () => {
   try {
     const data = await fs.readFile(SNIPPETS_FILE, 'utf-8');
-    return JSON.parse(data);
+    return JSON.parse(data) as Snippet[];
   } catch {
     return [];
   }
@@ -100,10 +167,9 @@ const writeSnippets = async (snippets: Snippet[]) => {
 };
 
 // Code Execution Handlers
-ipcMain.handle('execute-code', async (_event, code: string, cwd?: string, env?: Record<string, string>) => {
-  console.log('[Main] Execution requested', cwd ? `(CWD: ${cwd})` : '');
+ipcMain.handle('execute-code', async (_event, code: string, settings: { build: AppSettings['build'], advanced: AppSettings['advanced'] }, cwd?: string, env?: Record<string, string>) => {
   try {
-    return await SandboxService.execute(code, cwd, env);
+    return await SandboxService.execute(code, settings.build, settings.advanced, cwd, env);
   } catch (err) {
     console.error('[Main] Execution error:', err);
     return { success: false, error: String(err), executionTimeMs: 0 };
@@ -152,6 +218,16 @@ ipcMain.handle('save-settings', async (_event, settings: AppSettings) => {
   }
 });
 
+// Session Persistence Handlers
+ipcMain.handle('get-session', async () => {
+  return await loadSessionData();
+});
+
+ipcMain.handle('save-session', async (_event, session: SessionData) => {
+  const success = await saveSessionData(session);
+  return { success };
+});
+
 // NPM Package Management
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -187,7 +263,7 @@ ipcMain.handle('install-package', async (_event, name: string, cwd: string) => {
       cwd: absoluteCwd, 
       shell: true,
       env: { ...process.env }
-    } as any);
+    } as unknown as import('child_process').ExecOptions);
     
     const outStr = (stdout || '').toString();
     const errStr = (stderr || '').toString();
@@ -215,7 +291,7 @@ ipcMain.handle('uninstall-package', async (_event, name: string, cwd: string) =>
     const { stdout, stderr } = await execPromise(`${npmCmd} uninstall ${name}`, { 
       cwd: absoluteCwd, 
       shell: true 
-    } as any);
+    } as unknown as import('child_process').ExecOptions);
     
     const outStr = (stdout || '').toString();
     const errStr = (stderr || '').toString();
@@ -242,7 +318,7 @@ ipcMain.handle('search-packages', async (_event, query: string) => {
       }
     };
 
-    https.get(url, options, (res: any) => {
+    https.get(url, options, (res: import('http').IncomingMessage) => {
       const { statusCode } = res;
       let data = '';
       
@@ -253,11 +329,11 @@ ipcMain.handle('search-packages', async (_event, query: string) => {
         return;
       }
 
-      res.on('data', (chunk: any) => { data += chunk; });
+      res.on('data', (chunk: string | Buffer) => { data += chunk; });
       res.on('end', () => {
         try {
           const result = JSON.parse(data);
-          const suggestions = result.objects ? result.objects.map((obj: any) => ({
+          const suggestions = result.objects ? (result.objects as Array<{ package: { name: string, version: string } }>).map((obj) => ({
             name: obj.package.name,
             version: obj.package.version
           })) : [];
@@ -268,7 +344,7 @@ ipcMain.handle('search-packages', async (_event, query: string) => {
           resolve([]);
         }
       });
-    }).on('error', (err: any) => {
+    }).on('error', (err: Error) => {
       console.error('NPM search request failed:', err);
       resolve([]);
     });
@@ -292,8 +368,9 @@ ipcMain.handle('list-packages', async (_event, cwd: string) => {
       console.log(`[Main] No package.json found in ${absoluteCwd}`);
       return [];
     }
-  } catch (err: any) {
-    console.warn(`[Main] list-packages error: ${err.message}`);
+  } catch (err: unknown) {
+    const error = err as Error;
+    console.warn(`[Main] list-packages error: ${error.message}`);
     return [];
   }
 });
@@ -393,6 +470,30 @@ ipcMain.handle('delete-snippet', async (_event, id: string) => {
   return { success };
 });
 
+ipcMain.handle('get-system-fonts', async () => {
+  try {
+    if (process.platform === 'win32') {
+      // Use PowerShell to get font names on Windows, explicitly loading System.Drawing
+      const command = 'powershell -command "Add-Type -AssemblyName System.Drawing; [System.Drawing.Text.InstalledFontCollection]::new().Families.Name"';
+      console.log('[Main] Fetching system fonts via PowerShell...');
+      const { stdout } = await execPromise(command);
+      const fonts = stdout.toString().split(/\r?\n/).map(f => f.trim()).filter(f => f.length > 0);
+      console.log(`[Main] Found ${fonts.length} fonts.`);
+      return Array.from(new Set(fonts)).sort();
+    } else if (process.platform === 'darwin') {
+      // Basic approach for macOS
+      const { stdout } = await execPromise('system_profiler SPFontsDataType | grep "Full Name" | cut -d ":" -f 2');
+      const fonts = stdout.toString().split(/\r?\n/).map(f => f.trim()).filter(f => f.length > 0);
+      return Array.from(new Set(fonts)).sort();
+    }
+    // Fallback
+    return ['JetBrains Mono', 'Fira Code', 'Segoe UI', 'Arial', 'Monaco', 'Courier New', 'Consolas'];
+  } catch (err) {
+    console.error('[Main] Failed to get system fonts:', err);
+    return ['JetBrains Mono', 'Fira Code', 'Segoe UI', 'Arial', 'Monaco', 'Courier New', 'Consolas'];
+  }
+});
+
 // Event Bus Bridging
 onConsoleLog((logData: unknown) => {
   if (win && !win.isDestroyed()) {
@@ -443,4 +544,115 @@ ipcMain.handle('get-zoom-factor', () => {
     return win.webContents.getZoomFactor();
   }
   return 1;
+});
+
+// AI IPC Handler
+ipcMain.handle('ask-ai', async (_event, messages: ChatMessage[], settings: { model: string; apiKey: string; provider?: 'openai' | 'gemini' }) => {
+  const { model, apiKey, provider = 'openai' } = settings;
+  
+  if (!apiKey) {
+    return { content: '', error: `${provider === 'openai' ? 'OpenAI' : 'Gemini'} API Key is missing. Please add it in Settings.` };
+  }
+
+  return new Promise((resolve) => {
+    if (provider === 'openai') {
+      const data = JSON.stringify({
+        model: model || 'gpt-4o-mini',
+        messages: messages,
+      });
+
+      const options = {
+        hostname: 'api.openai.com',
+        port: 443,
+        path: '/v1/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Length': Buffer.byteLength(data)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let responseBody = '';
+        res.on('data', (d) => { responseBody += d; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(responseBody);
+            if (parsed.error) {
+              resolve({ content: '', error: parsed.error.message || 'OpenAI API returned an error.' });
+            } else if (parsed.choices && parsed.choices.length > 0) {
+              resolve({ content: parsed.choices[0].message.content });
+            } else {
+              resolve({ content: '', error: 'Received an unexpected response from OpenAI.' });
+            }
+          } catch {
+            resolve({ content: '', error: 'Failed to process OpenAI response.' });
+          }
+        });
+      });
+
+      req.on('error', (error) => {
+        resolve({ content: '', error: `Network error: ${error.message}` });
+      });
+
+      req.write(data);
+      req.end();
+    } else {
+      // Gemini implementation
+      const systemMsg = messages.find(m => m.role === 'system');
+      const chatMessages = messages
+        .filter(m => m.role !== 'system')
+        .map(msg => ({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        }));
+
+      const data = JSON.stringify({
+        contents: chatMessages,
+        system_instruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+        }
+      });
+
+      const options = {
+        hostname: 'generativelanguage.googleapis.com',
+        port: 443,
+        path: `/v1beta/models/${model || 'gemini-1.5-flash'}:generateContent?key=${apiKey}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(data)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let responseBody = '';
+        res.on('data', (d) => { responseBody += d; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(responseBody);
+            if (parsed.error) {
+              resolve({ content: '', error: parsed.error.message || 'Gemini API returned an error.' });
+            } else if (parsed.candidates && parsed.candidates[0]?.content?.parts?.[0]?.text) {
+              resolve({ content: parsed.candidates[0].content.parts[0].text });
+            } else {
+              resolve({ content: '', error: 'Received an unexpected response from Gemini.' });
+            }
+          } catch {
+            resolve({ content: '', error: 'Failed to process Gemini response.' });
+          }
+        });
+      });
+
+      req.on('error', (error) => {
+        resolve({ content: '', error: `Network error: ${error.message}` });
+      });
+
+      req.write(data);
+      req.end();
+    }
+  });
 });

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Split from 'react-split';
-import { Play, Square, Settings, Bookmark, Download, MessageSquare, Menu, Plus, X, Minus, AppWindow, ChevronRight } from 'lucide-react';
+import { Play, Square, Settings, Bookmark, Download, MessageSquare, Menu, Plus, X, Minus, AppWindow, ChevronRight, Check, Columns, Rows } from 'lucide-react';
 import { CodeEditor } from '../editor';
 import { ConsolePanel } from '../console';
 import { SnippetsModal } from './SnippetsModal';
@@ -9,56 +9,20 @@ import { NpmPackagesModal } from './NpmPackagesModal';
 import { EditTitleModal } from './EditTitleModal';
 import { SettingsModal } from './SettingsModal';
 import { ConfirmModal } from './ConfirmModal';
-import type { AppSettings, ConsoleLogMessage, ExecutionCompleteMessage, Snippet, ElectronAPI } from '../../shared/ipc';
+import type { AppSettings, ConsoleLogMessage, ElectronAPI, SessionData, ChatMessage } from '../../shared/ipc';
 import type * as monaco from 'monaco-editor';
-
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI;
-  }
-}
+import { formatCode } from './formattingService';
+import AIChat from './AIChat';
 import { ThemeRegistry } from '../../core/themes/ThemeRegistry';
 import { registerDefaultThemes } from '../../core/themes/default-themes';
 import { registerSnippetSuggestions } from '../../core/snippets/SnippetRegistry';
-import { Check } from 'lucide-react';
 
 // Initialize themes once at module level
 registerDefaultThemes();
 
 declare global {
-
   interface Window {
-    electronAPI: {
-      executeCode: (code: string, cwd?: string, env?: Record<string, string>) => Promise<ExecutionCompleteMessage>;
-      onExecutionComplete: (callback: (result: ExecutionCompleteMessage) => void) => void;
-      onConsoleOutput: (callback: (output: ConsoleLogMessage) => void) => void;
-      onWorkerStatus: (callback: (status: 'running' | 'stopped') => void) => void;
-      removeListeners: () => void;
-
-      windowControls: (action: 'minimize' | 'maximize' | 'close' | 'bring-to-front') => void;
-      openFile: () => Promise<{ canceled: boolean; filePath?: string; content?: string; error?: string }>;
-      saveFile: (content: string, filePath?: string) => Promise<{ canceled: boolean; filePath?: string; error?: string }>;
-      stopExecution: () => void;
-      
-      selectWorkingDirectory: () => Promise<{ canceled: boolean; filePath?: string; error?: string }>;
-      getSnippets: () => Promise<Snippet[]>;
-      saveSnippet: (snippet: Snippet) => Promise<{ success: boolean; error?: string }>;
-      deleteSnippet: (id: string) => Promise<{ success: boolean; error?: string }>;
-
-      getEnvVars: () => Promise<Record<string, string>>;
-      saveEnvVars: (envVars: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
-
-      installPackage: (name: string, cwd: string) => Promise<{ success: boolean; output: string; error?: string }>;
-      uninstallPackage: (name: string, cwd: string) => Promise<{ success: boolean; output: string; error?: string }>;
-      listPackages: (cwd: string) => Promise<{ name: string; version: string }[]>;
-      searchPackages: (query: string) => Promise<{ name: string; version: string }[]>;
-
-      setZoomFactor: (factor: number) => Promise<boolean>;
-      getZoomFactor: () => Promise<number>;
-
-      getSettings: () => Promise<AppSettings | null>;
-      saveSettings: (settings: AppSettings) => Promise<{ success: boolean; error?: string }>;
-    }
+    electronAPI: ElectronAPI;
   }
 }
 
@@ -69,7 +33,237 @@ interface TabData {
   logs: ConsoleLogMessage[];
   executionTime?: number;
   filePath?: string;
+  isDirty?: boolean;
 }
+
+interface TabItemProps {
+  tab: TabData;
+  isActive: boolean;
+  onSelect: () => void;
+  onClose: (e: React.MouseEvent) => void;
+  fileInitials: string;
+}
+
+function TabItem({ tab, isActive, onSelect, onClose, fileInitials }: TabItemProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  
+  return (
+    <div 
+      onClick={onSelect}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        backgroundColor: isActive ? 'var(--bg-primary)' : 'transparent', 
+        height: '100%', 
+        padding: '0 12px',
+        borderRight: '1px solid var(--border-color)',
+        color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+        fontSize: '12px',
+        gap: '8px',
+        cursor: 'pointer',
+        transition: 'all 0.1s ease',
+        position: 'relative',
+        minWidth: '100px',
+        justifyContent: 'center'
+      }}>
+      <span style={{ 
+        color: isActive ? '#66d9ef' : 'var(--text-muted)', 
+        fontWeight: 600, 
+        fontSize: '10px',
+        opacity: isActive ? 1 : 0.6,
+        letterSpacing: '0.02em',
+        width: '24px',
+        textAlign: 'center',
+        paddingTop: '2px'
+      }}>
+        {fileInitials}
+      </span>
+      <span style={{ 
+        maxWidth: '120px', 
+        overflow: 'hidden', 
+        textOverflow: 'ellipsis', 
+        whiteSpace: 'nowrap',
+        fontWeight: isActive ? 500 : 400
+      }}>
+        {tab.title}
+      </span>
+      
+      <div 
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose(e);
+        }}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          width: '16px',
+          height: '16px',
+          marginLeft: '4px'
+        }}
+      >
+        {(tab.isDirty && !isHovered) ? (
+          <div style={{ 
+            width: '6px', 
+            height: '6px', 
+            borderRadius: '50%', 
+            backgroundColor: isActive ? 'var(--accent-color)' : 'var(--text-muted)',
+            opacity: 0.8
+          }} />
+        ) : (
+          <X 
+            size={12} 
+            style={{ 
+              opacity: isHovered ? 1 : 0,
+              transition: 'opacity 0.1s ease',
+              color: 'var(--text-muted)'
+            }} 
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+const getThemePalette = (themeName: string): string[] => {
+    const theme = ThemeRegistry.getTheme(themeName);
+    if (!theme) return ['#333', '#444', '#555', '#666'];
+    const colors: string[] = [];
+    colors.push(theme.colors['editor.background'] || '#1e1e1e');
+    
+    const findColor = (scopes: string[]) => {
+        const tc = (theme.tokenColors || []).find(t => {
+            if (!t.scope) return false;
+            const s = Array.isArray(t.scope) ? t.scope : [t.scope];
+            return s.some(scope => scopes.some(target => scope.includes(target)));
+        });
+        return tc?.settings.foreground;
+    };
+
+    colors.push(findColor(['keyword', 'storage']) || '#c678dd');
+    colors.push(findColor(['string']) || '#98c379');
+    colors.push(findColor(['function', 'method']) || '#61afef');
+    
+    return colors;
+};
+
+interface MenuItemProps {
+  name?: string;
+  color?: string;
+  shortcut?: string;
+  onClick?: (e: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
+  hasSubmenu?: boolean;
+  isChecked?: boolean;
+  isDot?: boolean;
+  isSeparator?: boolean;
+  palette?: string[];
+  icon?: React.ReactNode;
+}
+
+const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, isChecked, isDot, isSeparator, palette, icon }: MenuItemProps) => {
+  const [isHovered, setIsHovered] = useState(false);
+  
+  if (isSeparator) {
+    return <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.08)', margin: '4px 0' }} />;
+  }
+
+  return (
+    <div 
+      style={{ 
+        padding: '4px 12px', 
+        cursor: 'pointer', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        backgroundColor: isHovered ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+        transition: 'background-color 0.1s ease',
+        borderRadius: '4px',
+        margin: '0 4px',
+        minHeight: '26px'
+      }}
+      onMouseEnter={() => {
+        setIsHovered(true);
+        if (onMouseEnter) onMouseEnter();
+      }}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={onClick}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ width: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {isChecked && !isDot && <Check size={14} color="var(--accent-color)" strokeWidth={3} />}
+          {isDot && (
+            <div style={{ 
+              width: '12px', height: '12px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              {isChecked && <div style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: 'var(--accent-color)' }} />}
+            </div>
+          )}
+          {!isChecked && !isDot && icon && <div style={{ opacity: 0.8 }}>{icon}</div>}
+        </div>
+        {palette && (
+            <div style={{ display: 'flex', height: '10px', borderRadius: '2px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.15)', marginRight: '4px' }}>
+                {palette.map((c, i) => <div key={i} style={{ width: '10px', backgroundColor: c }} />)}
+            </div>
+        )}
+        <span style={{ 
+          color: color || 'var(--text-primary)', 
+          fontWeight: isHovered ? 500 : 400,
+          fontSize: '12px',
+          opacity: isHovered ? 1 : 0.85
+        }}>
+          {name}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '20px' }}>
+        {shortcut && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px' }}>{shortcut}</span>}
+        {hasSubmenu && <ChevronRight size={13} color="var(--text-muted)" />}
+      </div>
+    </div>
+  );
+};
+
+interface SubmenuProps {
+  top: string | number;
+  left: string | number;
+  width?: string | number;
+  children: React.ReactNode;
+  onMouseEnter?: () => void;
+}
+
+const SubmenuContainer = ({ top, left, width = '200px', children, onMouseEnter }: SubmenuProps) => (
+  <div 
+    style={{
+      position: 'fixed', top, left, width,
+      backgroundColor: '#1c1c1c', 
+      borderRadius: '8px', 
+      boxShadow: '0 10px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1)',
+      zIndex: 100, padding: '4px 0',
+      display: 'flex', flexDirection: 'column', color: 'var(--text-primary)',
+      animation: 'fadeIn 0.1s ease-out'
+    }}
+    onMouseEnter={onMouseEnter}
+  >
+    {children}
+  </div>
+);
+
+const getFileTypeInitials = (filePath: string | undefined, isTypescriptSetting: boolean): string => {
+  if (filePath) {
+    const parts = filePath.split('.');
+    if (parts.length > 1) {
+      const ext = parts.pop()?.toLowerCase();
+      if (ext === 'js') return 'JS';
+      if (ext === 'ts') return 'TS';
+      if (ext === 'jsx') return 'JSX';
+      if (ext === 'tsx') return 'TSX';
+    }
+  }
+  return isTypescriptSetting ? 'TS' : 'JS';
+};
 
 export function Workspace() {
   const [tabs, setTabs] = useState<TabData[]>([
@@ -86,19 +280,24 @@ export function Workspace() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   
-  const [theme, setTheme] = useState(ThemeRegistry.getActiveThemeName() || 'Dark');
-  const [fontSize, setFontSize] = useState(14);
   const zoomFactorRef = useRef(1);
   const [cwd, setCwd] = useState<string | undefined>(undefined);
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
 
   const [isEnvVarsModalOpen, setIsEnvVarsModalOpen] = useState(false);
   const [isNpmModalOpen, setIsNpmModalOpen] = useState(false);
+  const [isSnippetsModalOpen, setIsSnippetsModalOpen] = useState(false);
   const [isEditTitleModalOpen, setIsEditTitleModalOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatSplitSizes, setChatSplitSizes] = useState([20, 80]);
 
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [systemFonts, setSystemFonts] = useState<string[]>(['JetBrains Mono', 'Fira Code']);
   const [isOutputVisible, setIsOutputVisible] = useState(true);
   const [layoutDirection, setLayoutDirection] = useState<'horizontal' | 'vertical'>('horizontal');
+  const [splitSizes, setSplitSizes] = useState<number[]>([50, 50]);
+  const [activeSidePane, setActiveSidePane] = useState<'chat' | null>(null);
 
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [confirmModalConfig, setConfirmModalConfig] = useState<{ 
@@ -106,1257 +305,609 @@ export function Workspace() {
     idToClose: string | null 
   }>({ isOpen: false, idToClose: null });
   const [settings, setSettings] = useState<AppSettings>({
-    general: {
-      autoRun: true,
-      lineWrap: true,
-      vimKeys: false,
-      autoCloseBrackets: true,
-      scrolling: 'Automatic',
-      confirmClose: false,
-      autocomplete: true,
-      linting: true,
-      hoverInfo: true,
-      signatures: false
-    },
-    build: {
-      transform: { typescript: true, jsx: false },
-      proposals: {
-        optionalChaining: false,
-        regexpModifiers: false,
-        doExpressions: false,
-        functionSent: false,
-        pipelineOperator: false,
-        partialApplication: false,
-        throwExpressions: false,
-        decorators: false
-      }
-    },
-    formatting: {
-      autoFormat: false,
-      printWidth: 80,
-      tabWidth: 2,
-      semicolons: true,
-      singleQuotes: false,
-      quoteProps: 'as-needed',
-      jsxQuotes: false,
-      trailingCommas: 'es5',
-      bracketSpacing: true,
-      arrowFunctionParentheses: 'always'
-    },
-    appearance: {
-      theme: 'Monokai',
-      font: 'JetBrains Mono',
-      fontSize: 14,
-      showLineNumbers: true,
-      showInvisibles: false,
-      highlightActiveLine: false,
-      showTabBar: true,
-      outputHighlighting: true,
-      showActivityBar: true
-    },
-    ai: {
-      openaiModel: 'GPT-4.1 mini',
-      openaiApiKey: ''
-    },
-    advanced: {
-      expressionResults: true,
-      matchLines: true,
-      showUndefined: false,
-      loopProtection: true
-    }
+    general: { autoRun: true, lineWrap: true, vimKeys: false, autoCloseBrackets: true, scrolling: 'Automatic', confirmClose: false, autocomplete: true, linting: true, hoverInfo: true, signatures: false },
+    build: { transform: { typescript: true, jsx: false }, proposals: { optionalChaining: false, regexpModifiers: false, doExpressions: false, functionSent: false, pipelineOperator: false, partialApplication: false, throwExpressions: false, decorators: false } },
+    formatting: { autoFormat: false, printWidth: 80, tabWidth: 2, semicolons: true, singleQuotes: false, quoteProps: 'as-needed', jsxQuotes: false, trailingCommas: 'es5', bracketSpacing: true, arrowFunctionParentheses: 'always' },
+    appearance: { theme: 'Dark', font: 'JetBrains Mono', fontSize: 14, showLineNumbers: true, showInvisibles: false, highlightActiveLine: true, showTabBar: true, outputHighlighting: true, showActivityBar: true, showConsoleHeader: true },
+    ai: { provider: 'openai', openaiModel: 'gpt-4o-mini', openaiApiKey: '', geminiModel: 'gemini-2.0-flash', geminiApiKey: '' },
+    advanced: { expressionResults: true, matchLines: true, showUndefined: false, loopProtection: true }
   });
+
+  const editorLineHeight = useMemo(() => Math.max(8, Math.round(settings.appearance.fontSize * 1.35)), [settings.appearance.fontSize]);
   const [markers, setMarkers] = useState<monaco.editor.IMarkerData[]>([]);
 
-  useEffect(() => {
-    // Load persisted settings on mount
-    const loadSettings = async () => {
-      try {
-        const savedSettings = await window.electronAPI.getSettings();
-        if (savedSettings) {
-          setSettings(savedSettings);
-          if (savedSettings.appearance?.theme) setTheme(savedSettings.appearance.theme);
-          if (savedSettings.appearance?.fontSize) setFontSize(savedSettings.appearance.fontSize);
-        }
-      } catch (err) {
-        console.error('Failed to load settings:', err);
-      }
-    };
-    loadSettings();
-  }, []);
-
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  useEffect(() => {
-    // Save settings whenever they change (debounced)
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      window.electronAPI.saveSettings(settings);
-    }, 1000);
-
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    };
-  }, [settings]);
-
-  // Sync theme/font size state with settings for backward compatibility if needed, 
-  // or just use settings directly. Let's sync for now to avoid breaking other things.
-  useEffect(() => {
-    setTheme(settings.appearance.theme);
-    setFontSize(settings.appearance.fontSize);
-  }, [settings.appearance.theme, settings.appearance.fontSize]);
-
-  // Initial load of env vars and zoom
-  useEffect(() => {
-    window.electronAPI.getEnvVars().then(setEnvVars);
-    window.electronAPI.getZoomFactor().then((f: number) => {
-      zoomFactorRef.current = f;
-    });
-  }, []);
-
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null); // Store Monaco editor instance
-
-  const handleEditorDidMount = (editor: monaco.editor.IStandaloneCodeEditor, m: typeof monaco) => {
-    editorRef.current = editor;
-    editor.focus();
-    // Ensure snippets are registered once the editor is ready
-    window.electronAPI.getSnippets().then((data: Snippet[]) => {
-      registerSnippetSuggestions(m, data);
-    });
-  };
-
-  const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
-
-  useEffect(() => {
-    window.electronAPI.onExecutionComplete((data: ExecutionCompleteMessage) => {
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, executionTime: data.executionTimeMs } : t));
-      setIsRunning(false);
-      
-      if (!data.success && (data.error || data.stack)) {
-        const parsedMarkers = parseErrorStack(data.stack || data.error || '');
-        setMarkers(parsedMarkers);
+  const deepMerge = useCallback(<T extends object>(target: T, source: any): T => {
+    if (!source || typeof source !== 'object') return target;
+    const result = { ...target } as any;
+    for (const key in source) {
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && target[key as keyof T] && typeof target[key as keyof T] === 'object') {
+        result[key] = deepMerge(target[key as keyof T] as any, source[key]);
       } else {
-        setMarkers([]);
+        result[key] = source[key];
       }
-    });
-
-    window.electronAPI.onConsoleOutput((log: ConsoleLogMessage) => {
-      setTabs(prevTabs => prevTabs.map(tab => 
-        tab.id === activeTabId ? { ...tab, logs: [...tab.logs, log] } : tab
-      ));
-    });
-
-    window.electronAPI.onWorkerStatus((status: 'running' | 'stopped') => {
-      console.log(`[UI] Worker status received: ${status}`);
-      setIsRunning(status === 'running');
-    });
-
-    return () => {
-      window.electronAPI.removeListeners();
-    };
-  }, [activeTabId]);
-
-
-
-  useEffect(() => {
-    ThemeRegistry.applyTheme(theme);
-  }, [theme]);
-
-  // No longer needed here as it is handled in handleEditorDidMount
-
-
-  const changeFontSize = useCallback((delta: number) => {
-    setFontSize(prev => Math.max(8, Math.min(48, prev + delta)));
-  }, []);
-
-  const handleZoom = useCallback(async (delta: number | 'reset') => {
-    try {
-      let newZoom = 1;
-      if (delta === 'reset') {
-        newZoom = 1.0;
-      } else {
-        newZoom = Math.max(0.4, Math.min(3.0, zoomFactorRef.current + delta));
-      }
-      
-      if (newZoom === zoomFactorRef.current && delta !== 'reset') return;
-      
-      zoomFactorRef.current = newZoom;
-      await window.electronAPI.setZoomFactor(newZoom);
-    } catch (err) {
-      console.error('[Zoom] Failed to change zoom:', err);
     }
+    return result as T;
   }, []);
 
-  const parseErrorStack = (stack: string): monaco.editor.IMarkerData[] => {
+  const parseErrorStack = useCallback((stack: string): monaco.editor.IMarkerData[] => {
     if (!stack) return [];
-    
-    // Split stack into lines and look for the first line that indicates the error location
-    // In our VM context, it usually looks like "at evalmachine.<anonymous>:3:1" 
-    // or just has the :line:col pattern.
     const lines = stack.split('\n');
     let locationLine = '';
-    
-    // Skip the first line as it's typically the error message
     for (let i = 1; i < lines.length; i++) {
       if (lines[i].includes('<anonymous>') || lines[i].includes('evalmachine')) {
         locationLine = lines[i];
         break;
       }
     }
-    
-    // Fallback to searching all lines if no specific marker found
-    if (!locationLine) {
-       for (const line of lines) {
-         if (/:(\d+):(\d+)/.test(line)) {
-           locationLine = line;
-           break;
-         }
-       }
-    }
-
-    if (locationLine) {
-      const regex = /:(\d+):(\d+)/;
-      const match = locationLine.match(regex);
-      
-      if (match) {
-        const line = parseInt(match[1], 10);
-        const col = parseInt(match[2], 10);
-        
-        console.log(`[Workspace] Parsed error location: line ${line}, col ${col}`);
-        
-        return [{
-          severity: 8, // monaco.MarkerSeverity.Error,
-          message: lines[0], // Error message is on the first line
-          startLineNumber: line,
-          startColumn: col,
-          endLineNumber: line,
-          endColumn: col + 1,
-        }];
-      }
-    }
-    
-    console.warn('[Workspace] Could not parse error location from stack:', stack);
-    return [];
-  };
-
-  const runCode = useCallback(async (codeToRun: string, tabId: string) => {
-    setMarkers([]); // Clear markers before run
-    setIsRunning(true);
-    // Clear logs for this tab before execution
-    setTabs(prev => prev.map(t => t.id === tabId ? { ...t, logs: [] } : t));
-    
-    try {
-      const result = await window.electronAPI.executeCode(codeToRun, cwd, envVars);
-      
-      setTabs(prev => prev.map(t => {
-        if (t.id !== tabId) return t;
-        
-        const newLogs = [...t.logs];
-        if (result.error) {
-           newLogs.push({ type: 'error', value: [result.error], timestamp: Date.now() });
-        } else if (result.result !== undefined) {
-           newLogs.push({ type: 'log', value: ['=>', String(result.result)], timestamp: Date.now() });
-        }
-        return { ...t, logs: newLogs, executionTime: result.executionTimeMs };
-      }));
-      
-    } catch (err) {
-      setTabs(prev => prev.map(t => t.id === tabId 
-        ? { ...t, logs: [...t.logs, { type: 'error', value: [err instanceof Error ? err.message : String(err)], timestamp: Date.now() }] } 
-        : t
-      ));
-    }
-  }, [cwd, envVars]);
+    if (!locationLine) return [];
+    const match = locationLine.match(/:(\d+):(\d+)/);
+    if (!match) return [];
+    const line = parseInt(match[1], 10);
+    const col = parseInt(match[2], 10);
+    return [{
+      startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col + 1,
+      message: lines[0] || 'Error', severity: 8
+    }];
+  }, []);
 
   useEffect(() => {
-    if (!settings.general.autoRun) return;
-    
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      runCode(activeTab.code, activeTabId);
-    }, 500); 
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+    const loadInitialData = async () => {
+      try {
+        const savedSettings = await window.electronAPI.getSettings();
+        if (savedSettings) {
+          setSettings(prev => deepMerge(prev, savedSettings));
+        }
+        const savedSession = await window.electronAPI.getSession();
+        if (savedSession) {
+          if (savedSession.tabs && savedSession.tabs.length > 0) setTabs(savedSession.tabs.map(t => ({ ...t, logs: [] })));
+          if (savedSession.activeTabId) setActiveTabId(savedSession.activeTabId);
+          if (savedSession.chatHistory) setChatMessages(savedSession.chatHistory);
+          if (savedSession.layout) {
+            setIsSidebarVisible(savedSession.layout.sidebarVisible);
+            setIsOutputVisible(savedSession.layout.outputVisible);
+            setLayoutDirection(savedSession.layout.layoutDirection);
+            if (savedSession.layout.splitSizes) setSplitSizes(savedSession.layout.splitSizes);
+            if (savedSession.layout.chatSidebarVisible) setActiveSidePane('chat');
+            if (savedSession.layout.chatSplitSizes) setChatSplitSizes(savedSession.layout.chatSplitSizes);
+          }
+        }
+      } catch (err) { console.error('Failed to load initial data:', err); }
     };
-  }, [activeTab.code, activeTabId, cwd, runCode, settings.general.autoRun]);
+    loadInitialData();
+  }, [deepMerge]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => window.electronAPI.saveSettings(settings), 1000);
+    // Sync sidebar visibility state with settings if changed via modal
+    setIsSidebarVisible(settings.appearance.showActivityBar);
+    return () => clearTimeout(timer);
+  }, [settings.appearance.showActivityBar, settings]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const sessionData: SessionData = {
+        tabs: tabs.map(t => ({ id: t.id, title: t.title, code: t.code, filePath: t.filePath })),
+        activeTabId, chatHistory: chatMessages,
+        layout: { sidebarVisible: isSidebarVisible, outputVisible: isOutputVisible, layoutDirection, splitSizes, chatSidebarVisible: activeSidePane === 'chat', chatSplitSizes }
+      };
+      window.electronAPI.saveSession(sessionData);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [tabs, activeTabId, chatMessages, isSidebarVisible, isOutputVisible, layoutDirection, splitSizes, activeSidePane, chatSplitSizes]);
+
+  useEffect(() => {
+    window.electronAPI.getSystemFonts().then(setSystemFonts);
+    window.electronAPI.getEnvVars().then(setEnvVars);
+    window.electronAPI.getZoomFactor().then(f => { zoomFactorRef.current = f; });
+  }, []);
+
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const handleEditorDidMount = (editor: monaco.editor.IStandaloneCodeEditor, m: typeof monaco) => {
+    editorRef.current = editor;
+    editor.focus();
+    window.electronAPI.getSnippets().then(data => registerSnippetSuggestions(m, data));
+  };
+
+  const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId) || tabs[0], [tabs, activeTabId]);
+
+  useEffect(() => {
+    window.electronAPI.onExecutionComplete((data) => {
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, executionTime: data.executionTimeMs } : t));
+      setIsRunning(false);
+      setMarkers(data.success ? [] : parseErrorStack(data.stack || data.error || ''));
+    });
+    window.electronAPI.onConsoleOutput((log) => {
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [...t.logs, log] } : t));
+    });
+    window.electronAPI.onWorkerStatus(status => setIsRunning(status === 'running'));
+    return () => window.electronAPI.removeListeners();
+  }, [activeTabId, parseErrorStack]);
+
+  useEffect(() => ThemeRegistry.applyTheme(settings.appearance.theme), [settings.appearance.theme]);
+
+  const changeFontSize = useCallback((delta: number) => {
+    setSettings(prev => ({
+      ...prev,
+      appearance: { ...prev.appearance, fontSize: Math.max(8, Math.min(48, prev.appearance.fontSize + delta)) }
+    }));
+  }, []);
+
+  const handleZoom = useCallback(async (delta: number | 'reset') => {
+    const newZoom = delta === 'reset' ? 1.0 : Math.max(0.4, Math.min(3.0, zoomFactorRef.current + delta));
+    if (newZoom === zoomFactorRef.current && delta !== 'reset') return;
+    zoomFactorRef.current = newZoom;
+    await window.electronAPI.setZoomFactor(newZoom);
+  }, []);
+
+  const handleFormat = useCallback(async (codeToFormat: string, tabId: string) => {
+    try {
+      const language = settings.build.transform.typescript ? 'typescript' : 'javascript';
+      const formatted = await formatCode(codeToFormat, settings.formatting, language);
+      if (formatted !== codeToFormat) {
+        setTabs(prev => prev.map(t => t.id === tabId ? { ...t, code: formatted } : t));
+      }
+      return formatted;
+    } catch { return codeToFormat; }
+  }, [settings.formatting, settings.build.transform.typescript]);
+
+  const runCode = useCallback(async (codeToRun: string, tabId: string, isManual = false) => {
+    setMarkers([]); setIsRunning(true);
+    setTabs(prev => prev.map(t => t.id === tabId ? { ...t, logs: [] } : t));
+    let finalCode = codeToRun;
+    if (isManual && settings.formatting.autoFormat) finalCode = await handleFormat(codeToRun, tabId);
+    try {
+      const result = await window.electronAPI.executeCode(finalCode, { build: settings.build, advanced: settings.advanced }, cwd, envVars);
+      setTabs(prev => prev.map(t => {
+        if (t.id !== tabId) return t;
+        const newLogs = [...t.logs];
+        if (result.error) newLogs.push({ type: 'error', value: [result.error], timestamp: Date.now() });
+        else if (result.result !== undefined && !settings.advanced.expressionResults) newLogs.push({ type: 'log', value: ['=>', String(result.result)], timestamp: Date.now() });
+        return { ...t, logs: newLogs, executionTime: result.executionTimeMs };
+      }));
+    } catch (err) {
+      setTabs(prev => prev.map(t => t.id === tabId ? { ...t, logs: [...t.logs, { type: 'error', value: [String(err)], timestamp: Date.now() }] } : t));
+    } finally { setIsRunning(false); }
+  }, [cwd, envVars, settings.build, settings.advanced, settings.formatting.autoFormat, handleFormat]);
+
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!settings.general.autoRun) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runCode(activeTab.code, activeTabId, false), 500);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [activeTab.code, activeTabId, runCode, settings.general.autoRun]);
 
   const stopCode = useCallback(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-    window.electronAPI.stopExecution();
-    setIsRunning(false);
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    window.electronAPI.stopExecution(); setIsRunning(false);
   }, []);
 
   const createNewTab = useCallback(() => {
     const newId = `tab-${Date.now()}`;
-    setTabs(prev => [...prev, {
-      id: newId,
-      title: 'Untitled',
-      code: '// New Scratchpad\n',
-      logs: []
-    }]);
+    setTabs(prev => [...prev, { id: newId, title: 'Untitled', code: '// New Scratchpad\n', logs: [] }]);
     setActiveTabId(newId);
   }, []);
 
-  const closeTab = (e: React.MouseEvent, idToClose: string) => {
-    e.stopPropagation();
-    if (tabs.length === 1) return; // Prevent closing the last tab
-
-    if (settings.general.confirmClose) {
-      setConfirmModalConfig({ isOpen: true, idToClose });
-      return;
-    }
-    
-    handleConfirmCloseTab(idToClose);
-  };
-
-  const handleConfirmCloseTab = (idToClose: string) => {
-    const newTabs = tabs.filter(t => t.id !== idToClose);
-    setTabs(newTabs);
-    
-    if (activeTabId === idToClose) {
-      const remainingTabs = tabs.filter(t => t.id !== idToClose);
-      setActiveTabId(remainingTabs[remainingTabs.length - 1].id);
-    }
-  };
-
-  const updateActiveTabCode = useCallback((newCode: string) => {
-    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, code: newCode } : t));
+  const handleConfirmCloseTab = useCallback((idToClose: string) => {
+    setTabs(prev => {
+        const remaining = prev.filter(t => t.id !== idToClose);
+        if (remaining.length === 0) return prev;
+        if (activeTabId === idToClose) setActiveTabId(remaining[remaining.length - 1].id);
+        return remaining;
+    });
   }, [activeTabId]);
+
+  const updateActiveTabCode = useCallback((code: string | undefined) => {
+    if (code === undefined) return;
+    setTabs(prev => {
+        const tab = prev.find(t => t.id === activeTabId);
+        if (tab && tab.code === code) return prev;
+        return prev.map(t => t.id === activeTabId ? { ...t, code, isDirty: true } : t);
+    });
+  }, [activeTabId]);
+
+  const handleSendToAI = useCallback(async (messages: ChatMessage[]) => {
+    if (isChatLoading) return;
+    setIsChatLoading(true);
+    if (activeSidePane !== 'chat') setActiveSidePane('chat');
+    try {
+      const response = await window.electronAPI.askAI(messages, {
+        provider: settings.ai.provider,
+        apiKey: settings.ai.provider === 'openai' ? settings.ai.openaiApiKey : settings.ai.geminiApiKey,
+        model: settings.ai.provider === 'openai' ? settings.ai.openaiModel : settings.ai.geminiModel
+      });
+      if (response.error) return { error: response.error };
+      setChatMessages(prev => [...prev, { role: 'assistant', content: response.content }]);
+      return { success: true };
+    } catch (err) { return { error: String(err) }; }
+    finally { setIsChatLoading(false); }
+  }, [isChatLoading, activeSidePane, settings.ai]);
+
+  const handleExplainOutput = useCallback(() => {
+    const logsText = activeTab.logs.map(log => `[${log.type}] ${log.value.join(' ')}`).join('\n');
+    if (!logsText.trim()) return;
+    const explainMessage: ChatMessage = { role: 'user', content: `Explain this output:\n\`\`\`\n${logsText}\n\`\`\`` };
+    setChatMessages(prev => [...prev, explainMessage]);
+    handleSendToAI([{ role: 'system', content: `Expert dev. Context:\n\`\`\`javascript\n${activeTab.code}\n\`\`\`` }, ...chatMessages, explainMessage]);
+  }, [activeTab, chatMessages, handleSendToAI]);
 
   const handleOpenFile = useCallback(async () => {
     const result = await window.electronAPI.openFile();
-    if (!result.canceled && result.filePath && result.content !== undefined) {
-      const fileName = result.filePath.replace(/\\/g, '/').split('/').pop() || 'Untitled';
-      
-      if (activeTab.title === 'Untitled' && activeTab.code === '// New Scratchpad\n') {
-        // Reuse current empty tab
-        setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, title: fileName, code: result.content!, filePath: result.filePath } : t));
+    if (!result.canceled && result.filePath) {
+      const fileName = result.filePath.split(/[\\/]/).pop() || 'Untitled';
+      if (activeTab.title === 'Untitled' && activeTab.code.trim() === '// Welcome to RunJS Clone!') {
+        setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, title: fileName, code: result.content!, filePath: result.filePath, isDirty: false } : t));
       } else {
-        // Creates a new tab
         const newId = `tab-${Date.now()}`;
-        setTabs(prev => [...prev, {
-          id: newId,
-          title: fileName,
-          code: result.content!,
-          logs: [],
-          filePath: result.filePath
-        }]);
+        setTabs(prev => [...prev, { id: newId, title: fileName, code: result.content!, logs: [], filePath: result.filePath, isDirty: false }]);
         setActiveTabId(newId);
       }
     }
-    setIsMenuOpen(false);
-    setActiveSubmenu(null);
-  }, [activeTab.code, activeTab.title, activeTabId]);
+  }, [activeTab, activeTabId]);
 
-  const handleSaveFile = useCallback(async (saveAs: boolean = false) => {
-    const targetPath = saveAs ? undefined : activeTab.filePath;
-    const result = await window.electronAPI.saveFile(activeTab.code, targetPath);
-    
+  const handleSaveFile = useCallback(async (saveAs = false) => {
+    const result = await window.electronAPI.saveFile(activeTab.code, saveAs ? undefined : activeTab.filePath);
     if (!result.canceled && result.filePath) {
-      const fileName = result.filePath.replace(/\\/g, '/').split('/').pop() || 'Untitled';
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, title: fileName, filePath: result.filePath } : t));
+      const fileName = result.filePath.split(/[\\/]/).pop() || 'Untitled';
+      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, title: fileName, filePath: result.filePath, isDirty: false } : t));
     }
-    setIsMenuOpen(false);
-    setActiveSubmenu(null);
-  }, [activeTab.code, activeTab.filePath, activeTabId]);
+  }, [activeTab, activeTabId]);
 
-  const handleSetWorkingDirectory = async () => {
-    const result = await window.electronAPI.selectWorkingDirectory();
-    if (!result.canceled && result.filePath) {
-      setCwd(result.filePath);
-    }
-    setIsMenuOpen(false);
-    setActiveSubmenu(null);
-  };
-
-  const handleUpdateTabTitle = (newTitle: string) => {
-    setTabs(prevTabs => prevTabs.map(tab => 
-      tab.id === activeTabId ? { ...tab, title: newTitle } : tab
-    ));
-  };
-
-  const [isSnippetsModalOpen, setIsSnippetsModalOpen] = useState(false);
-
-  const handleInsertSnippet = (code: string, newTab: boolean) => {
-    if (newTab) {
-      const newId = `tab-${Date.now()}`;
-      setTabs(prev => [...prev, {
-        id: newId,
-        title: 'New Snippet',
-        code: code,
-        logs: []
-      }]);
-      setActiveTabId(newId);
-    } else {
-      // Insert at cursor position if editor is available
-      if (editorRef.current) {
-        const editor = editorRef.current;
-        const selection = editor.getSelection();
-        if (selection) {
-          editor.executeEdits('snippet-insert', [
-            {
-              range: selection,
-              text: code,
-              forceMoveMarkers: true
-            }
-          ]);
-          editor.focus();
-        }
-      } else {
-        // Fallback to replacing whole code if editor is not yet mounted
-        updateActiveTabCode(code);
+  const executeEditorCommand = useCallback((command: string) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    if (command === 'clear') updateActiveTabCode('');
+    else if (command === 'editor.action.clipboardCopyAction' || command === 'editor.action.clipboardCutAction') {
+      const selection = editor.getSelection();
+      const text = editor.getModel()?.getValueInRange(selection!);
+      if (text) {
+        navigator.clipboard.writeText(text);
+        if (command === 'editor.action.clipboardCutAction') editor.executeEdits('cut', [{ range: selection!, text: '' }]);
       }
-    }
-    setIsSnippetsModalOpen(false);
-  };
-
-  const executeEditorCommand = useCallback(async (command: string) => {
-    if (editorRef.current) {
-      const editor = editorRef.current;
-      
-      if (command === 'clear') {
-        updateActiveTabCode('');
-      } else if (command === 'editor.action.clipboardCopyAction' || command === 'editor.action.clipboardCutAction') {
-        const selection = editor.getSelection();
-        const model = editor.getModel();
-        if (selection && model && !selection.isEmpty()) {
-          const text = model.getValueInRange(selection);
-          try {
-            await navigator.clipboard.writeText(text);
-            if (command === 'editor.action.clipboardCutAction') {
-               editor.executeEdits('cut-command', [{
-                  range: selection,
-                  text: '',
-                  forceMoveMarkers: true
-               }]);
-               editor.pushUndoStop();
-            }
-          } catch (err) {
-            console.error('Failed to access clipboard', err);
-          }
-        }
-      } else if (command === 'editor.action.clipboardPasteAction') {
-        try {
-          const text = await navigator.clipboard.readText();
-          const selection = editor.getSelection();
-          if (selection && text) {
-             editor.executeEdits('paste-command', [{
-               range: selection,
-               text: text,
-               forceMoveMarkers: true
-             }]);
-             editor.pushUndoStop();
-          }
-        } catch (err) {
-           console.error('Failed to read clipboard', err);
-        }
-      } else {
-        editor.trigger('keyboard', command, null);
-      }
-      
-      // Return focus to editor
-      editor.focus();
-    }
-    setIsMenuOpen(false);
-    setActiveSubmenu(null);
+    } else if (command === 'editor.action.clipboardPasteAction') {
+      navigator.clipboard.readText().then(text => editor.executeEdits('paste', [{ range: editor.getSelection()!, text }]));
+    } else editor.trigger('keyboard', command, null);
+    editor.focus(); setIsMenuOpen(false); setActiveSubmenu(null);
   }, [updateActiveTabCode]);
 
-  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCtrl = e.ctrlKey || e.metaKey;
       const isShift = e.shiftKey;
+      const isAlt = e.altKey;
       const key = e.key.toLowerCase();
-      const code = e.code;
-
+      
       if (isCtrl) {
-        // Handle Zoom and Font Size with high priority
-        if (code === 'Equal' || code === 'NumpadAdd') {
+        if (isShift) {
+            if (e.key === '+' || e.code === 'Equal' || e.key === '=') { e.preventDefault(); changeFontSize(1); }
+            else if (e.code === 'Minus' || e.key === '-') { e.preventDefault(); changeFontSize(-1); }
+        } else {
+            if (e.code === 'Equal' || e.key === '=') { e.preventDefault(); handleZoom(0.1); }
+            else if (e.code === 'Minus' || e.key === '-') { e.preventDefault(); handleZoom(-0.1); }
+            else if (e.code === 'Digit0' || e.key === '0') { e.preventDefault(); handleZoom('reset'); setSettings(prev => ({ ...prev, appearance: { ...prev.appearance, fontSize: 14 } })); }
+        }
+        
+        if (key === 't') { e.preventDefault(); createNewTab(); }
+        else if (key === 'o') { e.preventDefault(); handleOpenFile(); }
+        else if (key === 's') { e.preventDefault(); handleSaveFile(isShift); }
+        else if (key === 'r') { 
+          e.preventDefault(); 
+          if (isShift) stopCode(); 
+          else runCode(activeTab.code, activeTabId, true); 
+        }
+        else if (key === 'k') { 
+            e.preventDefault(); 
+            if (isShift) updateActiveTabCode(''); // Ctrl+Shift+K in RunJS
+            else stopCode(); 
+        }
+        else if (key === ',' || key === 'comma' || e.code === 'Comma') { e.preventDefault(); setIsSettingsModalOpen(true); }
+        else if (key === '\\' || e.code === 'Backslash') { e.preventDefault(); setIsSidebarVisible(v => !v); }
+        else if (key === 'j') { e.preventDefault(); setIsOutputVisible(v => !v); }
+        else if (key === 'w') { e.preventDefault(); handleConfirmCloseTab(activeTabId); }
+      } else if (isAlt && isShift && key === 'f') {
           e.preventDefault();
-          if (isShift) changeFontSize(1);
-          else handleZoom(0.1);
-          return;
-        }
-        if (code === 'Minus' || code === 'NumpadSubtract') {
-          e.preventDefault();
-          if (isShift) changeFontSize(-1);
-          else handleZoom(-0.1);
-          return;
-        }
-        if (code === 'Digit0' || code === 'Numpad0') {
-          e.preventDefault();
-          handleZoom('reset');
-          setFontSize(14);
-          return;
-        }
-
-        switch (key) {
-          case 'i':
-            e.preventDefault();
-            executeEditorCommand('editor.action.triggerSuggest');
-            break;
-          case 'p':
-            e.preventDefault();
-            setIsNpmModalOpen(prev => !prev);
-            break;
-          case 'r':
-            e.preventDefault();
-            if (isShift) stopCode();
-            else runCode(activeTab.code, activeTabId);
-            break;
-          case 'k':
-            e.preventDefault();
-            stopCode();
-            break;
-          case 'b':
-            e.preventDefault();
-            setIsSnippetsModalOpen(prev => !prev);
-            break;
-          case 'n':
-            e.preventDefault();
-            createNewTab();
-            break;
-          case 'o':
-            e.preventDefault();
-            handleOpenFile();
-            break;
-          case 's':
-            e.preventDefault();
-            handleSaveFile(isShift); // Ctrl+Shift+S for Save As
-            break;
-          case '\\':
-            e.preventDefault();
-            setIsSidebarVisible(prev => !prev);
-            break;
-          case 'j':
-            e.preventDefault();
-            setIsOutputVisible(prev => !prev);
-            break;
-          case 'm':
-            e.preventDefault();
-            window.electronAPI.windowControls('minimize');
-            break;
-        }
+          handleFormat(activeTab.code, activeTabId);
       }
     };
-
-    window.addEventListener('keydown', handleKeyDown, true); // Use capture to intercept before Monaco
+    window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [activeTab.code, activeTabId, runCode, stopCode, createNewTab, handleOpenFile, handleSaveFile, setIsNpmModalOpen, setIsSnippetsModalOpen, executeEditorCommand, handleZoom, changeFontSize]);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'row', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-primary)' }}>
-
-      {/* Left Sidebar (App Navigation) */}
-      {isSidebarVisible && (
-        <div style={{ 
-          width: '56px', 
-          backgroundColor: '#202124', 
-          borderRight: '1px solid #333',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          paddingTop: '20px',
-          paddingBottom: '20px',
-          zIndex: 50,
-          position: 'relative'
-        }}>
-        {/* Top Icons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center' }}>
-          <div 
-            onClick={() => setIsMenuOpen(!isMenuOpen)} 
-            style={{ 
-              cursor: 'pointer', 
-              padding: '8px', 
-              backgroundColor: isMenuOpen ? '#333' : 'transparent', 
-              borderRadius: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <Menu size={22} color={isMenuOpen ? '#fff' : '#888'} />
-          </div>
-          <div style={{ width: '28px', height: '1px', backgroundColor: '#333' }} />
-          <Play size={22} color="#888" style={{ cursor: 'pointer' }} onClick={() => runCode(activeTab.code, activeTabId)} />
-          <Square size={20} color="#888" style={{ cursor: 'pointer', opacity: isRunning ? 1 : 0.5 }} onClick={isRunning ? stopCode : undefined} />
-          <div style={{ width: '28px', height: '1px', backgroundColor: '#333' }} />
-          <Bookmark size={22} color="#888" style={{ cursor: 'pointer' }} onClick={() => setIsSnippetsModalOpen(true)} />
-          <Download size={22} color="#888" style={{ cursor: 'pointer' }} onClick={() => setIsNpmModalOpen(true)} />
-          <MessageSquare size={22} color="#888" style={{ cursor: 'pointer' }} />
-        </div>
-        {/* Bottom Icons */}
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center' }}>
-          <Settings size={22} color="#888" style={{ cursor: 'pointer' }} onClick={() => setIsSettingsModalOpen(true)} />
-        </div>
-      </div>
-    )}
-
-      {/* Main Content Area */}
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        flex: 1, 
-        minWidth: 0, 
-        position: 'relative',
-      }}>
+  }, [activeTab.code, activeTabId, runCode, handleOpenFile, handleSaveFile, createNewTab, changeFontSize, handleZoom, stopCode, handleConfirmCloseTab, handleFormat, updateActiveTabCode]);
 
 
-        
-        {/* Floating Dropdown Menu */}
-        {isMenuOpen && (
-          <>
-            {/* Invisible backdrop to detect outside clicks */}
-            <div 
-              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 }} 
-              onClick={() => {
-                setIsMenuOpen(false);
-                setActiveSubmenu(null);
-              }}
-            />
-            
-            {/* Main Menu Panel */}
-            <div style={{
-              position: 'fixed',
-              top: '40px',
-              left: '56px',
-              width: '240px',
-              backgroundColor: '#202124',
-              borderRadius: '0 8px 8px 8px',
-              boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-              border: '1px solid #333',
-              borderLeft: 'none',
-              zIndex: 50,
-              padding: '8px 0',
-              display: 'flex',
-              flexDirection: 'column',
-              color: '#d4d4d4',
-              fontSize: '14px'
-            }}>
-              {['File', 'Edit', 'Action', 'Tools', 'View', 'Themes', 'Window', 'Help'].map((item) => (
-                <div key={item} style={{
-                  padding: '10px 16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  backgroundColor: activeSubmenu === item ? '#333' : 'transparent',
-                  transition: 'background-color 0.1s'
-                }}
-                onMouseEnter={() => setActiveSubmenu(item)}
-                >
-                  <span style={{ color: item === 'Action' ? '#eab308' : item === 'Help' ? '#eab308' : '#fff' }}>{item}</span>
-                  <ChevronRight size={16} color="#888" />
-                </div>
-              ))}
-            </div>
+  const handleUpdateTabTitle = useCallback((newTitle: string) => {
+    setTabs(prev => prev.map(tab => tab.id === activeTabId ? { ...tab, title: newTitle } : tab));
+  }, [activeTabId]);
 
-            {/* Submenus */}
-            {activeSubmenu === 'File' && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('File')}
-                style={{
-                  position: 'fixed',
-                  top: '40px',
-                  left: '296px', // 56px (sidebar) + 240px (menu width)
-                  width: '240px',
-                  backgroundColor: '#202124',
-                  borderRadius: '0 8px 8px 8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 50,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px'
-              }}>
-                <div 
-                  style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { createNewTab(); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                >
-                  <span>New File</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+N</span>
-                </div>
-                <div 
-                  style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={handleOpenFile}
-                >
-                  <span>Open...</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+O</span>
-                </div>
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div 
-                  style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => handleSaveFile(false)}
-                >
-                  <span>Save</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+S</span>
-                </div>
-                <div 
-                  style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => handleSaveFile(true)}
-                >
-                  <span>Save As...</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+Shift+S</span>
-                </div>
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div 
-                  style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={(e) => { closeTab(e, activeTabId); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                >
-                  <span>Close File</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+W</span>
-                </div>
-              </div>
-            )}
-            
-            {activeSubmenu === 'Edit' && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('Edit')}
-                style={{
-                  position: 'fixed',
-                  top: '40px',
-                  left: '296px',
-                  width: '280px',
-                  backgroundColor: '#202124',
-                  borderRadius: '0 8px 8px 8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 50,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px'
-              }}>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('undo')}>
-                  <span>Undo</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+Z</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('redo')}>
-                  <span>Redo</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+Shift+Z</span>
-                </div>
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.clipboardCutAction')}>
-                  <span>Cut</span><span></span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.clipboardCopyAction')}>
-                  <span>Copy</span><span></span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.clipboardPasteAction')}>
-                  <span>Paste</span><span></span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.selectAll')}>
-                  <span>Select All</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+A</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('clear')}>
-                  <span>Clear</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+Shift+K</span>
-                </div>
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('actions.find')}>
-                  <span>Find</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+F</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.startFindReplaceAction')}>
-                  <span>Replace</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Alt+Ctrl+F</span>
-                </div>
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.commentLine')}>
-                  <span>Toggle Line Comment</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+/</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.blockComment')}>
-                  <span>Toggle Block Comment</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Alt+Ctrl+/</span>
-                </div>
-              </div>
-            )}
-            
-            {activeSubmenu === 'Action' && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('Action')}
-                style={{
-                  position: 'fixed',
-                  top: '40px',
-                  left: '296px',
-                  width: '280px',
-                  backgroundColor: '#202124',
-                  borderRadius: '0 8px 8px 8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 50,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px'
-              }}>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { runCode(activeTab.code, activeTabId); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Play size={14} color="#d4d4d4" fill="#d4d4d4" /><span>Run</span></div><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+R</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { stopCode(); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Square size={14} color="#d4d4d4" fill="#d4d4d4" /><span>Stop</span></div><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+Shift+R</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { stopCode(); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><span style={{ width: '14px' }}/><span>Kill</span></div><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+K</span>
-                </div>
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={handleSetWorkingDirectory}
-                  >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><span style={{ width: '14px' }}/><span>Set Working Directory...</span></div><span></span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => executeEditorCommand('editor.action.formatDocument')}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><span style={{ width: '14px' }}/><span>Format Code</span></div><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Alt+Shift+F</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setIsSnippetsModalOpen(true); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                  >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><span style={{ width: '14px' }}/><span>Create Snippet...</span></div><span></span>
-                </div>
-              </div>
-            )}
+  const handleInsertSnippet = useCallback((code: string, newTab: boolean) => {
+    if (newTab) {
+      const newId = `tab-${Date.now()}`;
+      setTabs(prev => [...prev, { id: newId, title: 'New Snippet', code, logs: [] }]);
+      setActiveTabId(newId);
+    } else {
+      if (editorRef.current) {
+        const editor = editorRef.current;
+        const selection = editor.getSelection();
+        if (selection) {
+          editor.executeEdits('snippet', [{ range: selection, text: code, forceMoveMarkers: true }]);
+          editor.focus();
+        }
+      } else updateActiveTabCode(code);
+    }
+  }, [updateActiveTabCode]);
 
-            {activeSubmenu === 'Tools' && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('Tools')}
-                style={{
-                  position: 'fixed',
-                  top: '120px',
-                  left: '296px',
-                  width: '240px',
-                  backgroundColor: '#202124',
-                  borderRadius: '0 8px 8px 8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 50,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px'
-              }}>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setIsNpmModalOpen(true); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                  >
-                  <span>NPM Packages...</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+P</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setIsEnvVarsModalOpen(true); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                  >
-                  <span>Environment Variables...</span><span></span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setIsSnippetsModalOpen(true); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                  >
-                  <span>Snippets...</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+B</span>
-                </div>
-              </div>
-            )}
+  const handleSetWorkingDirectory = useCallback(async () => {
+    const result = await window.electronAPI.selectWorkingDirectory();
+    if (!result.canceled && result.filePath) {
+      setCwd(result.filePath);
+    }
+  }, []);
 
-            {(activeSubmenu === 'View' || activeSubmenu === 'Layout') && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('View')}
-                style={{
-                  position: 'fixed',
-                  top: '160px',
-                  left: '296px',
-                  width: '240px',
-                  backgroundColor: '#202124',
-                  borderRadius: '0 8px 8px 8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 50,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px'
-              }}>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { handleZoom('reset'); setFontSize(14); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <span>Actual Size</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+0</span>
-                </div>
+  const clearLogs = useCallback(() => {
+    setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [] } : t));
+  }, [activeTabId]);
 
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { changeFontSize(1); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <span>Increase Font Size</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+Shift++</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { changeFontSize(-1); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <span>Decrease Font Size</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+Shift+-</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { handleZoom(0.1); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <span>Zoom In</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl++</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { handleZoom(-0.1); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <span>Zoom Out</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+-</span>
-                </div>
-
-
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setIsSidebarVisible(!isSidebarVisible); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <span>{isSidebarVisible ? 'Hide Activity Bar' : 'Show Activity Bar'}</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+\</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setIsOutputVisible(!isOutputVisible); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <span>{isOutputVisible ? 'Hide Output' : 'Show Output'}</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+J</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={() => setActiveSubmenu('Layout')}
-                  onMouseLeave={() => {}}
-                >
-                  <span>Layout</span><ChevronRight size={14} color="#888" />
-                </div>
-              </div>
-            )}
-
-            {activeSubmenu === 'Layout' && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('Layout')}
-                style={{
-                  position: 'fixed',
-                  top: '429px',
-                  left: '536px',
-                  width: '200px',
-                  backgroundColor: '#202124',
-                  borderRadius: '8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 60,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px'
-              }}>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setLayoutDirection('horizontal'); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {layoutDirection === 'horizontal' && <Check size={14} color="var(--accent-color)" />}
-                    <span style={{ marginLeft: layoutDirection === 'horizontal' ? 0 : '22px' }}>Horizontal</span>
-                  </div>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setLayoutDirection('vertical'); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {layoutDirection === 'vertical' && <Check size={14} color="var(--accent-color)" />}
-                    <span style={{ marginLeft: layoutDirection === 'vertical' ? 0 : '22px' }}>Vertical</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeSubmenu === 'Themes' && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('Themes')}
-                style={{
-                  position: 'fixed',
-                  top: '180px',
-                  left: '296px',
-                  width: '260px',
-                  backgroundColor: '#202124',
-                  borderRadius: '0 8px 8px 8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 50,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px',
-                  maxHeight: '400px',
-                  overflowY: 'auto'
-              }}>
-                {ThemeRegistry.getAllThemes().map((tName, i) => (
-                  <div key={tName} style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    onClick={() => { setTheme(tName); setIsMenuOpen(false); setActiveSubmenu(null); }}>
-                    <span style={{ color: theme === tName ? '#3b82f6' : 'transparent', width: '12px' }}><Check size={14}/></span>
-                    <div style={{ display: 'flex', overflow: 'hidden', borderRadius: '2px', width: '40px', height: '12px', flexShrink: 0 }}>
-                      <div style={{ flex: 1, backgroundColor: ['#3b82f6', '#f43f5e', '#a855f7', '#10b981', '#f59e0b'][i % 5] }}></div>
-                      <div style={{ flex: 1, backgroundColor: ['#10b981', '#3b82f6', '#f43f5e', '#a855f7', '#1e1e1e'][i % 5] }}></div>
-                      <div style={{ flex: 1, backgroundColor: ['#f59e0b', '#10b981', '#3b82f6', '#3b82f6', '#f43f5e'][i % 5] }}></div>
-                    </div>
-                    <span style={{ flex: 1 }}>{tName}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeSubmenu === 'Window' && (
-              <div 
-                onMouseEnter={() => setActiveSubmenu('Window')}
-                style={{
-                  position: 'fixed',
-                  top: '280px', // 7th item
-                  left: '296px',
-                  width: '260px',
-                  backgroundColor: '#202124',
-                  borderRadius: '0 8px 8px 8px',
-                  boxShadow: '4px 4px 16px rgba(0,0,0,0.4)',
-                  border: '1px solid #333',
-                  zIndex: 50,
-                  padding: '8px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  color: '#d4d4d4',
-                  fontSize: '14px'
-              }}>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { setIsEditTitleModalOpen(true); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                  >
-                  <span>Edit tab title</span>
-                </div>
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { window.electronAPI.windowControls('minimize'); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                  >
-                  <span>Minimize</span><span style={{ color: '#888', fontSize: '11px', marginLeft: '32px' }}>Ctrl+M</span>
-                </div>
-                <div style={{ height: '1px', backgroundColor: '#333', margin: '4px 0' }} />
-                <div style={{ padding: '8px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#333'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  onClick={() => { window.electronAPI.windowControls('bring-to-front'); setIsMenuOpen(false); setActiveSubmenu(null); }}
-                  >
-                  <span>Bring All to Front</span>
-                </div>
-              </div>
-            )}
-
-          </>
-        )}
-
-        {/* Top Tab Bar (Like RunJS/Chrome) */}
-        <div style={{ 
-          height: '44px', 
-          backgroundColor: '#282a2d', 
-          display: 'flex',
-          alignItems: 'center',
-          paddingLeft: '0px',
-          paddingRight: '16px',
-        }}>
-          {tabs.map(tab => (
-            <div 
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                backgroundColor: activeTabId === tab.id ? '#1e1e1e' : 'transparent', 
-                height: '100%', 
-                padding: '0 16px',
-                borderTop: activeTabId === tab.id ? '2px solid transparent' : '2px solid transparent',
-                borderRight: '1px solid #333',
-                color: activeTabId === tab.id ? '#fff' : '#888',
-                fontSize: '13px',
-                gap: '12px',
-                cursor: 'pointer',
-              }}>
-              <span style={{ color: activeTabId === tab.id ? '#3b82f6' : '#555', fontWeight: 500 }}>JS</span>
-              <span>{tab.title}</span>
-              <X 
-                size={14} 
-                color={activeTabId === tab.id ? '#888' : '#555'} 
-                style={{ marginLeft: '12px', cursor: 'pointer' }} 
-                onClick={(e) => closeTab(e, tab.id)}
-              />
-            </div>
-          ))}
-          <div style={{ padding: '0 12px', display: 'flex', alignItems: 'center', height: '100%' }}>
-             <Plus size={18} color="#888" style={{ cursor: 'pointer' }} onClick={createNewTab} />
-          </div>
-
-          <div style={{ flex: 1, height: '100%', WebkitAppRegion: 'drag' } as React.CSSProperties} />
-          
-          {/* Custom Window Controls */}
-          <div style={{ display: 'flex', gap: '20px', paddingLeft: '16px', alignItems: 'center', height: '100%' }}>
-             <Minus size={16} color="#888" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('minimize')} />
-             <AppWindow size={14} color="#888" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('maximize')} />
-             <X size={16} color="#888" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('close')} />
-          </div>
-
-        </div>
-
-        {/* Editor & Console Split Panes */}
+  const renderContent = () => {
+    const editorPanel = (
+      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', position: 'relative', height: '100%', overflow: 'hidden' }}>
         {isOutputVisible ? (
           <Split 
             key={layoutDirection}
-            sizes={[50, 50]} 
+            sizes={splitSizes} 
             minSize={100} 
-            expandToMin={false} 
             gutterSize={1} 
-            gutterAlign="center" 
-            snapOffset={30} 
-            dragInterval={1} 
             direction={layoutDirection} 
-            cursor={layoutDirection === 'horizontal' ? 'col-resize' : 'row-resize'}
-            style={{ display: 'flex', flexDirection: layoutDirection === 'horizontal' ? 'row' : 'column', flex: 1, minHeight: 0, width: '100%' }}
+            onDragEnd={setSplitSizes} 
+            style={{ 
+              display: 'flex', 
+              flexDirection: layoutDirection === 'horizontal' ? 'row' : 'column', 
+              flex: 1, 
+              height: '100%', 
+              overflow: 'hidden' 
+            }}
           >
-            <div style={{ minHeight: 0, height: '100%', backgroundColor: 'var(--bg-primary)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', height: '100%', width: '100%' }}>
               <CodeEditor 
-                key={`${activeTabId}-${theme}-${fontSize}-${settings.general.vimKeys}`}
+                key={`${activeTabId}-${settings.appearance.theme}-${settings.appearance.fontSize}`} 
                 code={activeTab.code} 
-                onChange={(val: string | undefined) => updateActiveTabCode(val || '')} 
-                onMount={handleEditorDidMount}
-                theme={theme}
-                fontSize={fontSize}
-                wordWrap={settings.general.lineWrap ? 'on' : 'off'}
-                lineNumbers={settings.appearance.showLineNumbers ? 'on' : 'off'}
-                fontFamily={settings.appearance.font}
+                onChange={updateActiveTabCode} 
+                onMount={handleEditorDidMount} 
+                theme={settings.appearance.theme} 
+                fontSize={settings.appearance.fontSize} 
+                wordWrap={settings.general.lineWrap ? 'on' : 'off'} 
+                lineNumbers={settings.appearance.showLineNumbers ? 'on' : 'off'} 
+                fontFamily={settings.appearance.font} 
+                markers={markers} 
+                language={settings.build.transform.typescript ? 'typescript' : 'javascript'} 
+                jsxEnabled={settings.build.transform.jsx} 
                 renderWhitespace={settings.appearance.showInvisibles ? 'all' : 'none'}
                 highlightActiveLine={settings.appearance.highlightActiveLine}
+                vimKeys={settings.general.vimKeys}
                 autoCloseBrackets={settings.general.autoCloseBrackets}
                 autocomplete={settings.general.autocomplete}
                 linting={settings.general.linting}
                 hoverInfo={settings.general.hoverInfo}
                 signatures={settings.general.signatures}
-                vimKeys={settings.general.vimKeys}
-                markers={markers}
               />
             </div>
-
-            <div style={{ 
-              minHeight: 0, 
-              height: '100%', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              borderLeft: layoutDirection === 'horizontal' ? '1px solid #333' : 'none',
-              borderTop: layoutDirection === 'vertical' ? '1px solid #333' : 'none'
-            }}>
-              <ConsolePanel logs={activeTab.logs} executionTime={activeTab.executionTime} scrolling={settings.general.scrolling} />
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', height: '100%', width: '100%' }}>
+              <ConsolePanel 
+                logs={activeTab.logs} 
+                executionTime={activeTab.executionTime} 
+                scrolling={settings.general.scrolling} 
+                highlighting={settings.appearance.outputHighlighting}
+                matchLines={settings.advanced.matchLines}
+                lineHeight={editorLineHeight} 
+                fontSize={settings.appearance.fontSize} 
+                showConsoleHeader={settings.appearance.showConsoleHeader}
+                onExplain={handleExplainOutput} 
+              />
             </div>
           </Split>
         ) : (
-          <div style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%', backgroundColor: 'var(--bg-primary)' }}>
-            <CodeEditor 
-              key={`${activeTabId}-${theme}-${fontSize}-${settings.general.vimKeys}`}
-              code={activeTab.code} 
-              onChange={(val: string | undefined) => updateActiveTabCode(val || '')} 
-              onMount={handleEditorDidMount}
-              theme={theme}
-              fontSize={fontSize}
-              wordWrap={settings.general.lineWrap ? 'on' : 'off'}
-              lineNumbers={settings.appearance.showLineNumbers ? 'on' : 'off'}
-              fontFamily={settings.appearance.font}
-              renderWhitespace={settings.appearance.showInvisibles ? 'all' : 'none'}
-              highlightActiveLine={settings.appearance.highlightActiveLine}
-              autoCloseBrackets={settings.general.autoCloseBrackets}
-              autocomplete={settings.general.autocomplete}
-              linting={settings.general.linting}
-              hoverInfo={settings.general.hoverInfo}
-              signatures={settings.general.signatures}
-              vimKeys={settings.general.vimKeys}
-              markers={markers}
-            />
-          </div>
+          <CodeEditor 
+            key={`${activeTabId}-${settings.appearance.theme}-${settings.appearance.fontSize}`} 
+            code={activeTab.code} 
+            onChange={updateActiveTabCode} 
+            onMount={handleEditorDidMount} 
+            theme={settings.appearance.theme} 
+            fontSize={settings.appearance.fontSize} 
+            wordWrap={settings.general.lineWrap ? 'on' : 'off'} 
+            language={settings.build.transform.typescript ? 'typescript' : 'javascript'} 
+            renderWhitespace={settings.appearance.showInvisibles ? 'all' : 'none'}
+            highlightActiveLine={settings.appearance.highlightActiveLine}
+            vimKeys={settings.general.vimKeys}
+            autoCloseBrackets={settings.general.autoCloseBrackets}
+            autocomplete={settings.general.autocomplete}
+            linting={settings.general.linting}
+            hoverInfo={settings.general.hoverInfo}
+            signatures={settings.general.signatures}
+          />
         )}
       </div>
-      
-      <SnippetsModal 
-        isOpen={isSnippetsModalOpen} 
-        onClose={() => setIsSnippetsModalOpen(false)} 
-        onInsert={handleInsertSnippet}
-        theme={theme}
-      />
+    );
 
-      <EnvVarsModal 
-        isOpen={isEnvVarsModalOpen}
-        onClose={() => setIsEnvVarsModalOpen(false)}
-        envVars={envVars}
-        onUpdate={setEnvVars}
-      />
+    if (activeSidePane === 'chat') {
+      return (
+        <Split sizes={chatSplitSizes} minSize={[250, 400]} gutterSize={1} direction="horizontal" onDragEnd={setChatSplitSizes} style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden' }}>
+          <div style={{ height: '100%', backgroundColor: 'var(--bg-secondary)', overflow: 'hidden' }}>
+            <AIChat messages={chatMessages} setMessages={setChatMessages} isLoading={isChatLoading} provider={settings.ai.provider} apiKey={settings.ai.provider === 'openai' ? settings.ai.openaiApiKey : settings.ai.geminiApiKey} currentCode={activeTab.code} onOpenSettings={() => setIsSettingsModalOpen(true)} onSendMessage={handleSendToAI} />
+          </div>
+          {editorPanel}
+        </Split>
+      );
+    }
 
-      <NpmPackagesModal 
-        isOpen={isNpmModalOpen}
-        onClose={() => setIsNpmModalOpen(false)}
-        cwd={cwd}
-        onChangeDirectory={handleSetWorkingDirectory}
-      />
+    return editorPanel;
+  };
 
-      <EditTitleModal 
-        isOpen={isEditTitleModalOpen}
-        onClose={() => setIsEditTitleModalOpen(false)}
-        currentTitle={activeTab.title}
-        onUpdate={handleUpdateTabTitle}
-      />
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-primary)', overflow: 'hidden' }}>
+      <div style={{ height: '44px', backgroundColor: 'var(--bg-toolbar)', display: 'flex', alignItems: 'center', padding: '0 16px 0 4px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
+        <div onClick={() => setIsMenuOpen(!isMenuOpen)} style={{ cursor: 'pointer', padding: '8px', backgroundColor: isMenuOpen ? '#333' : 'transparent', borderRadius: '6px', display: 'flex', alignItems: 'center', marginRight: '8px' }}>
+          <Menu size={20} color={isMenuOpen ? 'var(--text-primary)' : 'var(--text-muted)'} />
+        </div>
+        <div style={{ width: '1px', height: '20px', backgroundColor: 'var(--border-color)', marginRight: '8px' }} />
+        {(settings.appearance.showTabBar || tabs.length > 1) && tabs.map(tab => (
+          <TabItem key={tab.id} tab={tab} isActive={activeTabId === tab.id} onSelect={() => setActiveTabId(tab.id)} onClose={(e) => { e.stopPropagation(); handleConfirmCloseTab(tab.id); }} fileInitials={getFileTypeInitials(tab.filePath, settings.build.transform.typescript)} />
+        ))}
+        {(settings.appearance.showTabBar || tabs.length > 1) && (
+          <div style={{ padding: '0 12px', display: 'flex', alignItems: 'center', height: '100%' }}>
+            <Plus size={18} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={createNewTab} />
+          </div>
+        )}
+        <div style={{ flex: 1, height: '100%', WebkitAppRegion: 'drag' } as any} />
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+          <Minus size={16} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('minimize')} />
+          <AppWindow size={14} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('maximize')} />
+          <X size={16} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('close')} />
+        </div>
+      </div>
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        settings={settings}
-        onUpdate={setSettings}
-        themes={ThemeRegistry.getAllThemes()}
-      />
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {isSidebarVisible && (
+          <div style={{ width: '56px', backgroundColor: 'var(--bg-secondary)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0', flexShrink: 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <Play size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => runCode(activeTab.code, activeTabId, true)} />
+              <Square size={20} color="var(--text-muted)" style={{ cursor: isRunning ? 'pointer' : 'default', opacity: isRunning ? 1 : 0.4 }} onClick={isRunning ? stopCode : undefined} />
+              <Bookmark size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => setIsSnippetsModalOpen(true)} />
+              <Download size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => setIsNpmModalOpen(true)} />
+              <MessageSquare size={22} color={activeSidePane === 'chat' ? 'var(--accent-color)' : 'var(--text-muted)'} style={{ cursor: 'pointer' }} onClick={() => setActiveSidePane(activeSidePane === 'chat' ? null : 'chat')} />
+            </div>
+            <div style={{ marginTop: 'auto' }}>
+              <Settings size={22} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => setIsSettingsModalOpen(true)} />
+            </div>
+          </div>
+        )}
+        
+        {renderContent()}
+      </div>
 
-      <ConfirmModal 
-        isOpen={confirmModalConfig.isOpen}
-        onClose={() => setConfirmModalConfig({ isOpen: false, idToClose: null })}
-        onConfirm={() => {
-          if (confirmModalConfig.idToClose) {
-            handleConfirmCloseTab(confirmModalConfig.idToClose);
-          }
-        }}
-        title="Close Tab"
-        message="Are you sure you want to close this scratchpad? Any unsaved changes will be lost."
-        confirmLabel="Close Tab"
-        isDanger={true}
-      />
+      {isMenuOpen && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setIsMenuOpen(false)} />
+          <div style={{ position: 'fixed', top: '40px', left: '56px', width: '200px', backgroundColor: '#1c1c1c', borderRadius: '8px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', zIndex: 50, padding: '8px 0' }}>
+            {['File', 'Edit', 'Action', 'Tools', 'View', 'Themes', 'Window', 'Help'].map(item => (
+              <MenuItem key={item} name={item} hasSubmenu onMouseEnter={() => setActiveSubmenu(item)} color={(item === 'Action') ? '#eab308' : undefined} />
+            ))}
+          </div>
+          {activeSubmenu?.startsWith('File') && (
+            <SubmenuContainer top="40px" left="256px" width="180px" onMouseEnter={() => setActiveSubmenu('File')}>
+              <MenuItem name="New Tab" shortcut="Ctrl+T" onClick={createNewTab} />
+              <MenuItem name="Re-open Closed Tab" shortcut="Ctrl+Shift+T" />
+              <MenuItem name="Open..." shortcut="Ctrl+O" onClick={handleOpenFile} />
+              <MenuItem isSeparator />
+              <MenuItem name="Save" shortcut="Ctrl+S" onClick={() => handleSaveFile(false)} />
+              <MenuItem name="Save As..." shortcut="Ctrl+Shift+S" onClick={() => handleSaveFile(true)} />
+              <MenuItem isSeparator />
+              <MenuItem name="Settings..." shortcut="Ctrl+," onClick={() => setIsSettingsModalOpen(true)} />
+              <MenuItem isSeparator />
+              <MenuItem name="Manage License..." />
+              <MenuItem isSeparator />
+              <MenuItem name="Close Tab" shortcut="Ctrl+W" onClick={() => handleConfirmCloseTab(activeTabId)} />
+              <MenuItem name="Exit" onClick={() => window.electronAPI.windowControls('close')} />
+            </SubmenuContainer>
+          )}
+          {activeSubmenu?.startsWith('Edit') && (
+            <SubmenuContainer top="80px" left="256px" width="200px" onMouseEnter={() => setActiveSubmenu('Edit')}>
+              <MenuItem name="Undo" shortcut="Ctrl+Z" onClick={() => executeEditorCommand('undo')} />
+              <MenuItem name="Redo" shortcut="Ctrl+Shift+Z" onClick={() => executeEditorCommand('redo')} />
+              <MenuItem isSeparator />
+              <MenuItem name="Cut" onClick={() => executeEditorCommand('editor.action.clipboardCutAction')} />
+              <MenuItem name="Copy" onClick={() => executeEditorCommand('editor.action.clipboardCopyAction')} />
+              <MenuItem name="Paste" onClick={() => executeEditorCommand('editor.action.clipboardPasteAction')} />
+              <MenuItem name="Select All" shortcut="Ctrl+A" onClick={() => executeEditorCommand('editor.action.selectAll')} />
+              <MenuItem name="Clear" shortcut="Ctrl+Shift+K" onClick={() => updateActiveTabCode('')} />
+              <MenuItem isSeparator />
+              <MenuItem name="Find" shortcut="Ctrl+F" onClick={() => executeEditorCommand('actions.find')} />
+              <MenuItem name="Replace" shortcut="Alt+Ctrl+F" onClick={() => executeEditorCommand('editor.action.startFindReplaceAction')} />
+              <MenuItem isSeparator />
+              <MenuItem name="Toggle Line Comment" shortcut="Ctrl+/" onClick={() => executeEditorCommand('editor.action.commentLine')} />
+              <MenuItem name="Toggle Block Comment" shortcut="Alt+Ctrl+/" onClick={() => executeEditorCommand('editor.action.blockComment')} />
+            </SubmenuContainer>
+          )}
+          {activeSubmenu?.startsWith('Action') && (
+            <SubmenuContainer top="120px" left="256px" width="220px" onMouseEnter={() => setActiveSubmenu('Action')}>
+              <MenuItem name="Run" shortcut="Ctrl+R" icon={<Play size={13} fill="currentColor" />} onClick={() => runCode(activeTab.code, activeTabId, true)} />
+              <MenuItem name="Stop" shortcut="Ctrl+Shift+R" icon={<Square size={11} fill="currentColor" />} onClick={stopCode} />
+              <MenuItem name="Kill" shortcut="Ctrl+K" onClick={stopCode} />
+              <MenuItem isSeparator />
+              <MenuItem name="Set Working Directory..." onClick={handleSetWorkingDirectory} />
+              <MenuItem name="Format Code" shortcut="Alt+Shift+F" onClick={() => handleFormat(activeTab.code, activeTabId)} />
+              <MenuItem name="Create Snippet..." onClick={() => setIsSnippetsModalOpen(true)} />
+            </SubmenuContainer>
+          )}
+          {activeSubmenu?.startsWith('Tools') && (
+            <SubmenuContainer top="160px" left="256px" width="200px" onMouseEnter={() => setActiveSubmenu('Tools')}>
+              <MenuItem name="Snippets" onClick={() => setIsSnippetsModalOpen(true)} />
+              <MenuItem name="Environment Variables" onClick={() => setIsEnvVarsModalOpen(true)} />
+              <MenuItem name="NPM Packages" onClick={() => setIsNpmModalOpen(true)} />
+              <MenuItem name="Settings" onClick={() => setIsSettingsModalOpen(true)} />
+            </SubmenuContainer>
+          )}
+          {activeSubmenu?.startsWith('View') && (
+            <SubmenuContainer top="200px" left="256px" width="180px" onMouseEnter={() => setActiveSubmenu('View')}>
+              <MenuItem name="Actual Size" shortcut="Ctrl+0" onClick={() => { handleZoom('reset'); setSettings(prev => ({ ...prev, appearance: { ...prev.appearance, fontSize: 14 } })); }} />
+              <MenuItem name="Increase Font Size" shortcut="Ctrl++" onClick={() => changeFontSize(1)} />
+              <MenuItem name="Decrease Font Size" shortcut="Ctrl+-" onClick={() => changeFontSize(-1)} />
+              <MenuItem name="Full Screen" onClick={() => window.electronAPI.windowControls('maximize')} />
+              <MenuItem isSeparator />
+              <MenuItem name="Activity Bar" isChecked={isSidebarVisible} onClick={() => setIsSidebarVisible(v => !v)} />
+              <MenuItem name="Output" isChecked={isOutputVisible} onClick={() => setIsOutputVisible(v => !v)} />
+              <MenuItem name="Clear Console" onClick={clearLogs} />
+              <MenuItem name="Layout" hasSubmenu onMouseEnter={() => setActiveSubmenu('View-Layout')} />
+            </SubmenuContainer>
+          )}
+          {activeSubmenu === 'View-Layout' && (
+            <SubmenuContainer top="396px" left="431px" width="140px" onMouseEnter={() => setActiveSubmenu('View-Layout')}>
+                <MenuItem name="Horizontal" isChecked={layoutDirection === 'horizontal'} isDot icon={<Columns size={12} />} onClick={() => setLayoutDirection('horizontal')} />
+                <MenuItem name="Vertical" isChecked={layoutDirection === 'vertical'} isDot icon={<Rows size={12} />} onClick={() => setLayoutDirection('vertical')} />
+            </SubmenuContainer>
+          )}
+          {activeSubmenu === 'Themes' && (
+            <SubmenuContainer top="240px" left="256px" width="240px" onMouseEnter={() => setActiveSubmenu('Themes')}>
+                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                    {ThemeRegistry.getAllThemes().map(t => (
+                        <MenuItem 
+                            key={t} 
+                            name={t} 
+                            isChecked={settings.appearance.theme === t}
+                            palette={getThemePalette(t)}
+                            onClick={() => {
+                                setSettings(prev => ({ ...prev, appearance: { ...prev.appearance, theme: t } }));
+                                setIsMenuOpen(false);
+                                setActiveSubmenu(null);
+                            }} 
+                        />
+                    ))}
+                </div>
+            </SubmenuContainer>
+          )}
+          {activeSubmenu === 'Window' && (
+            <SubmenuContainer top="280px" left="256px" width="200px" onMouseEnter={() => setActiveSubmenu('Window')}>
+              <MenuItem name="Minimize" shortcut="Ctrl+M" onClick={() => window.electronAPI.windowControls('minimize')} />
+              <MenuItem name="Maximize" shortcut="Ctrl+Shift+M" onClick={() => window.electronAPI.windowControls('maximize')} />
+              <MenuItem name="Close" shortcut="Ctrl+W" onClick={() => window.electronAPI.windowControls('close')} />
+            </SubmenuContainer>
+          )}
+          {activeSubmenu === 'Help' && (
+            <SubmenuContainer top="320px" left="256px" width="200px" onMouseEnter={() => setActiveSubmenu('Help')}>
+              <MenuItem name="Welcome" />
+              <MenuItem name="Documentation" />
+              <MenuItem isSeparator />
+              <MenuItem name="Check for Updates..." />
+              <MenuItem isSeparator />
+              <MenuItem name="About RunJS" />
+            </SubmenuContainer>
+          )}
+        </>
+      )}
+
+      <SnippetsModal isOpen={isSnippetsModalOpen} onClose={() => setIsSnippetsModalOpen(false)} onInsert={handleInsertSnippet} theme={settings.appearance.theme} />
+      <EnvVarsModal isOpen={isEnvVarsModalOpen} onClose={() => setIsEnvVarsModalOpen(false)} envVars={envVars} onUpdate={setEnvVars} />
+      <NpmPackagesModal isOpen={isNpmModalOpen} onClose={() => setIsNpmModalOpen(false)} cwd={cwd} onChangeDirectory={handleSetWorkingDirectory} />
+      <EditTitleModal isOpen={isEditTitleModalOpen} onClose={() => setIsEditTitleModalOpen(false)} currentTitle={activeTab.title} onUpdate={handleUpdateTabTitle} />
+      <SettingsModal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} settings={settings} onUpdate={setSettings} themes={ThemeRegistry.getAllThemes()} availableFonts={systemFonts} />
+      <ConfirmModal isOpen={confirmModalConfig.isOpen} onClose={() => setConfirmModalConfig({ isOpen: false, idToClose: null })} onConfirm={() => { if (confirmModalConfig.idToClose) handleConfirmCloseTab(confirmModalConfig.idToClose); }} title="Close Tab" message="Are you sure you want to close this scratchpad? Any unsaved changes will be lost." confirmLabel="Close Tab" isDanger />
     </div>
   );
 }

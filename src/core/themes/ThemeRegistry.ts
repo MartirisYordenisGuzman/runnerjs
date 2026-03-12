@@ -50,6 +50,12 @@ export class ThemeRegistry {
 
         if (color) {
           root.style.setProperty(cssVar, color);
+        } else if (cssVar === '--editor-line-highlight') {
+          // Force fallback for line highlight to prevent red defaults
+          root.style.setProperty(cssVar, theme.type === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.02)');
+        } else if (cssVar === '--editor-selection') {
+          // Force fallback for selection to prevent red defaults - use a subtle blue tint
+          root.style.setProperty(cssVar, theme.type === 'dark' ? 'rgba(60, 116, 255, 0.3)' : 'rgba(0, 120, 215, 0.15)');
         }
       });
     } catch (err) {
@@ -138,6 +144,9 @@ export class ThemeRegistry {
             ...themeData.colors,
             'editor.background': themeData.colors['editor.background'] || (themeData.type === 'light' ? '#ffffff' : '#1e1e1e'),
             'editor.foreground': themeData.colors['editor.foreground'] || (themeData.type === 'light' ? '#333333' : '#d4d4d4'),
+            'editor.lineHighlightBackground': themeData.colors['editor.lineHighlightBackground'] || (themeData.type === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.02)'),
+            'editor.lineHighlightBorder': '#00000000',
+            'editor.selectionBackground': themeData.colors['editor.selectionBackground'] || (themeData.type === 'dark' ? 'rgba(60, 116, 255, 0.3)' : 'rgba(0, 120, 215, 0.15)'),
           } as { [key: string]: string }
         });
       } catch (err) {

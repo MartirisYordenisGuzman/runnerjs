@@ -7,6 +7,8 @@ export interface ConsoleLogMessage {
   type: 'log' | 'warn' | 'error' | 'info' | 'debug';
   value: unknown[];
   timestamp: number;
+  line?: number;      // Line number for Match Lines alignment
+  isCaptured?: boolean; // True if it's an automatically captured expression result
 }
 
 // Format of successful/failed execution from the sandbox
@@ -77,10 +79,14 @@ export interface AppSettings {
     showTabBar: boolean;
     outputHighlighting: boolean;
     showActivityBar: boolean;
+    showConsoleHeader: boolean;
   },
   ai: {
+    provider: 'openai' | 'gemini';
     openaiModel: string;
     openaiApiKey: string;
+    geminiModel: string;
+    geminiApiKey: string;
   },
   advanced: {
     expressionResults: boolean;
@@ -90,8 +96,34 @@ export interface AppSettings {
   }
 }
 
+export interface SessionData {
+  tabs: Array<{
+    id: string;
+    title: string;
+    code: string;
+    filePath?: string;
+  }>;
+  activeTabId: string | null;
+  chatHistory?: ChatMessage[];
+  layout: {
+    sidebarVisible: boolean;
+    outputVisible: boolean;
+    layoutDirection: 'horizontal' | 'vertical';
+    splitSizes: number[];
+    chatSidebarVisible?: boolean;
+    chatSplitSizes?: number[];
+  };
+  windowState?: {
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    isMaximized: boolean;
+  };
+}
+
 export interface ElectronAPI {
-  executeCode: (code: string, cwd?: string, env?: Record<string, string>) => Promise<ExecutionCompleteMessage>;
+  executeCode: (code: string, settings: { build: AppSettings['build'], advanced: AppSettings['advanced'] }, cwd?: string, env?: Record<string, string>) => Promise<ExecutionCompleteMessage>;
   onExecutionComplete: (callback: (result: ExecutionCompleteMessage) => void) => void;
   onConsoleOutput: (callback: (output: ConsoleLogMessage) => void) => void;
   onWorkerStatus: (callback: (status: 'running' | 'stopped') => void) => void;
@@ -127,4 +159,19 @@ export interface ElectronAPI {
   // Zoom
   setZoomFactor: (factor: number) => Promise<boolean>;
   getZoomFactor: () => Promise<number>;
+
+  // Session
+  getSession: () => Promise<SessionData | null>;
+  saveSession: (session: SessionData) => Promise<{ success: boolean; error?: string }>;
+
+  // System Fonts
+  getSystemFonts: () => Promise<string[]>;
+
+  // AI
+  askAI: (messages: ChatMessage[], settings: { model: string; apiKey: string; provider?: 'openai' | 'gemini' }) => Promise<{ content: string; error?: string }>;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
 }

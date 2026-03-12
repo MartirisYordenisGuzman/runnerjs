@@ -22,6 +22,8 @@ export interface ThemeMapping {
   '--border-color': string;
   '--border-highlight': string;
   '--accent-color': string;
+  '--editor-line-highlight': string;
+  '--editor-selection': string;
 }
 
 export const VSCODE_TO_UI_MAP: { [key in keyof ThemeMapping]: string | string[] } = {
@@ -32,5 +34,7 @@ export const VSCODE_TO_UI_MAP: { [key in keyof ThemeMapping]: string | string[] 
   '--text-muted': ['descriptionForeground', 'sideBar.foreground'],
   '--border-color': ['sideBar.border', 'editorGroup.border'],
   '--border-highlight': ['focusBorder', 'activityBar.activeBorder'],
-  '--accent-color': ['button.background', 'activityBarBadge.background']
+  '--accent-color': ['button.background', 'activityBarBadge.background'],
+  '--editor-line-highlight': ['editor.lineHighlightBackground'],
+  '--editor-selection': ['editor.selectionBackground']
 };

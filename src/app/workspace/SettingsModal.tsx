@@ -11,6 +11,7 @@ interface SettingsModalProps {
   settings: AppSettings;
   onUpdate: (settings: AppSettings) => void;
   themes: string[];
+  availableFonts?: string[];
 }
 
 const TabButton = ({ id, activeTab, onSelect, icon: Icon, label, accentColor }: { id: SettingsTab, activeTab: SettingsTab, onSelect: (id: SettingsTab) => void, icon: React.ElementType, label: string, accentColor: string }) => (
@@ -24,7 +25,7 @@ const TabButton = ({ id, activeTab, onSelect, icon: Icon, label, accentColor }: 
       padding: '8px 4px',
       cursor: 'pointer',
       color: activeTab === id ? accentColor : 'var(--text-muted)',
-      backgroundColor: activeTab === id ? 'rgba(255,255,255,0.08)' : 'transparent',
+      backgroundColor: activeTab === id ? 'var(--bg-toolbar)' : 'transparent',
       borderRadius: '8px',
       transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
       minWidth: '76px',
@@ -32,7 +33,7 @@ const TabButton = ({ id, activeTab, onSelect, icon: Icon, label, accentColor }: 
       position: 'relative'
     }}
     onMouseEnter={(e) => {
-      if (activeTab !== id) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)';
+      if (activeTab !== id) e.currentTarget.style.backgroundColor = 'var(--bg-toolbar)';
     }}
     onMouseLeave={(e) => {
       if (activeTab !== id) e.currentTarget.style.backgroundColor = 'transparent';
@@ -81,8 +82,8 @@ const Checkbox = ({ checked, onChange, label, textColor, accentColor }: { checke
         width: '18px', 
         height: '18px', 
         borderRadius: '4px', 
-        border: `1px solid ${checked ? accentColor : 'rgba(255,255,255,0.2)'}`,
-        backgroundColor: checked ? accentColor : 'rgba(255,255,255,0.03)',
+        border: `1px solid ${checked ? accentColor : 'var(--border-color)'}`,
+        backgroundColor: checked ? accentColor : 'var(--bg-secondary)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -129,7 +130,14 @@ const Select = ({ value, onChange, options, inputBg, textColor }: { value: strin
   </select>
 );
 
-export function SettingsModal({ isOpen, onClose, settings, onUpdate, themes }: SettingsModalProps) {
+export function SettingsModal({ 
+  isOpen, 
+  onClose, 
+  settings, 
+  onUpdate, 
+  themes,
+  availableFonts = ['JetBrains Mono', 'Fira Code', 'Segoe UI', 'Arial']
+}: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('General');
   const { position, isDragging, handleDragStart, resetPosition } = useDraggable();
 
@@ -173,7 +181,7 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdate, themes }: S
         backgroundColor: bgColor, color: textColor,
         width: '720px', maxHeight: '90vh', borderRadius: '12px',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        boxShadow: '0 30px 100px -12px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255,255,255,0.08)',
+        boxShadow: '0 30px 100px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-color)',
         border: `1px solid ${borderColor}`,
         position: 'relative',
         transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
@@ -198,7 +206,7 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdate, themes }: S
               background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px',
               borderRadius: '4px', transition: 'background-color 0.2s'
-            }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'} 
+            }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--bg-toolbar)'} 
                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
               <X size={16} />
             </button>
@@ -394,7 +402,7 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdate, themes }: S
                 <Select 
                     value={settings.appearance.font} 
                     onChange={(v: string) => updateSetting('appearance', 'font', v)} 
-                    options={['JetBrains Mono', 'Fira Code', 'Monaco', 'Courier New', 'DejaVu Sans Mono']} 
+                    options={availableFonts} 
                     inputBg={inputBg}
                     textColor={textColor}
                 />
@@ -426,36 +434,99 @@ export function SettingsModal({ isOpen, onClose, settings, onUpdate, themes }: S
               <SettingRow label="Activity Bar" textColor={textColor}>
                 <Checkbox checked={settings.appearance.showActivityBar} onChange={(v) => updateSetting('appearance', 'showActivityBar', v)} label="Show activity bar" textColor={textColor} accentColor={accentColor} />
               </SettingRow>
+              <SettingRow label="Console Footer" textColor={textColor}>
+                <Checkbox checked={settings.appearance.showConsoleHeader} onChange={(v) => updateSetting('appearance', 'showConsoleHeader', v)} label="Show 'Console Output' footer" textColor={textColor} accentColor={accentColor} />
+              </SettingRow>
             </div>
           )}
 
           {activeTab === 'AI' && (
             <div>
-              <SettingRow label="OpenAI Model" textColor={textColor}>
+              <SettingRow label="AI Provider" textColor={textColor}>
                 <Select 
-                    value={settings.ai.openaiModel} 
-                    onChange={(v: string) => updateSetting('ai', 'openaiModel', v)} 
-                    options={['GPT-4o', 'GPT-4-turbo', 'GPT-4.1 mini', 'GPT-3.5-turbo']} 
+                    value={settings.ai.provider} 
+                    onChange={(v: string) => updateSetting('ai', 'provider', v)} 
+                    options={[
+                      { label: 'OpenAI', value: 'openai' },
+                      { label: 'Google Gemini', value: 'gemini' }
+                    ]} 
                     inputBg={inputBg}
                     textColor={textColor}
                 />
               </SettingRow>
-              <SettingRow label="OpenAI API Key" textColor={textColor}>
-                <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
-                  <input 
-                    type="password" 
-                    value={settings.ai.openaiApiKey} 
-                    onChange={(e) => updateSetting('ai', 'openaiApiKey', e.target.value)}
-                    placeholder="sk-..."
-                    className="settings-input"
-                    style={{ 
-                      padding: '8px 12px', borderRadius: '6px', 
-                      backgroundColor: inputBg, color: textColor,
-                      fontSize: '13px', outline: 'none', width: '100%'
-                    }}
-                  />
-                </div>
-              </SettingRow>
+
+              <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)', margin: '16px 0' }} />
+
+              {settings.ai.provider === 'openai' ? (
+                <>
+                  <SettingRow label="OpenAI Model" textColor={textColor}>
+                    <Select 
+                        value={settings.ai.openaiModel} 
+                        onChange={(v: string) => updateSetting('ai', 'openaiModel', v)} 
+                        options={[
+                          { label: 'GPT-4o', value: 'gpt-4o' },
+                          { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
+                          { label: 'GPT-4 Turbo', value: 'gpt-4-turbo' },
+                          { label: 'GPT-3.5 Turbo', value: 'gpt-3.5-turbo' }
+                        ]} 
+                        inputBg={inputBg}
+                        textColor={textColor}
+                    />
+                  </SettingRow>
+                  <SettingRow label="OpenAI API Key" textColor={textColor}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+                      <input 
+                        type="password" 
+                        value={settings.ai.openaiApiKey} 
+                        onChange={(e) => updateSetting('ai', 'openaiApiKey', e.target.value)}
+                        placeholder="sk-..."
+                        className="settings-input"
+                        style={{ 
+                          padding: '8px 12px', borderRadius: '6px', 
+                          backgroundColor: inputBg, color: textColor,
+                          fontSize: '13px', outline: 'none', width: '100%'
+                        }}
+                      />
+                    </div>
+                  </SettingRow>
+                </>
+              ) : (
+                <>
+                  <SettingRow label="Gemini Model" textColor={textColor}>
+                    <Select 
+                        value={settings.ai.geminiModel} 
+                        onChange={(v: string) => updateSetting('ai', 'geminiModel', v)} 
+                        options={[
+                          { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
+                          { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
+                          { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro' },
+                          { label: 'Gemini Flash (Latest)', value: 'gemini-flash-latest' }
+                        ]} 
+                        inputBg={inputBg}
+                        textColor={textColor}
+                    />
+                  </SettingRow>
+                  <SettingRow label="Gemini API Key" textColor={textColor}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+                      <input 
+                        type="password" 
+                        value={settings.ai.geminiApiKey} 
+                        onChange={(e) => updateSetting('ai', 'geminiApiKey', e.target.value)}
+                        placeholder="Paste your Gemini key here..."
+                        className="settings-input"
+                        style={{ 
+                          padding: '8px 12px', borderRadius: '6px', 
+                          backgroundColor: inputBg, color: textColor,
+                          fontSize: '13px', outline: 'none', width: '100%'
+                        }}
+                      />
+                    </div>
+                  </SettingRow>
+                  <div style={{ marginLeft: '146px', fontSize: '12px', color: 'var(--text-muted)', marginTop: '-4px' }}>
+                    <p>Free tier available at <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: 'var(--accent-color)' }}>Google AI Studio</a></p>
+                  </div>
+                </>
+              )}
             </div>
           )}
 

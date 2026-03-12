@@ -60,7 +60,7 @@ body {
 
 /* React Split Gutter Styling */
 .gutter {
-  background-color: var(--border-color);
+  background-color: #1a1a1a;
   background-repeat: no-repeat;
   background-position: 50%;
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
@@ -72,11 +72,11 @@ body {
 }
 .gutter.gutter-horizontal {
   cursor: col-resize;
-  width: 4px !important;
+  width: 1px !important;
 }
 .gutter.gutter-vertical {
   cursor: row-resize;
-  height: 4px !important;
+  height: 1px !important;
 }
 
 /* Animations */
@@ -124,6 +124,21 @@ body {
   padding-right: 32px !important;
 }
 
+/* Global Brute-force override for active line highlight (avoiding RED) */
+.monaco-editor .view-overlays .current-line {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border: none !important;
+}
+.monaco-editor .margin-view-overlays .current-line-margin {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border: none !important;
+}
+
+/* Global Brute-force override for selection (avoiding RED) */
+.monaco-editor .selected-text {
+  background-color: var(--editor-selection) !important;
+}
+
 /* Monaco Glyph Markers */
 .error-marker::before {
   content: "" !important;
@@ -152,10 +167,9 @@ body {
 }
 
 .error-line-border {
-  border: 2px solid rgba(239, 68, 68, 0.8) !important;
-  background-color: rgba(239, 68, 68, 0.05) !important;
+  border-left: 3px solid rgba(239, 68, 68, 0.8) !important;
+  background-color: transparent !important;
   left: 0 !important;
-  box-sizing: border-box !important;
 }
 
 /* Vim Status Bar Styling */

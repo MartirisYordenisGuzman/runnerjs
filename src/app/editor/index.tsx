@@ -22,6 +22,8 @@ interface CodeEditorProps {
   hoverInfo?: boolean;
   signatures?: boolean;
   markers?: monaco.editor.IMarkerData[];
+  language?: string;
+  jsxEnabled?: boolean;
 }
 
 export function CodeEditor({ 
@@ -41,7 +43,9 @@ export function CodeEditor({
   linting = true,
   hoverInfo = true,
   signatures = false,
-  markers = []
+  markers = [],
+  language = 'javascript',
+  jsxEnabled = false
 }: CodeEditorProps) {
   const monaco = useMonaco();
   const [isReady, setIsReady] = useState(false);
@@ -51,17 +55,37 @@ export function CodeEditor({
   const monacoThemeId = ThemeRegistry.getThemeMonacoId(theme);
   const decorationIdsRef = useRef<string[]>([]);
 
-  // 1. Initialize Monaco components Once
   useEffect(() => {
     if (monaco) {
       ThemeRegistry.registerThemesInMonaco(monaco);
       monaco.editor.setTheme(monacoThemeId);
       
+      // Configure JSX support if enabled
+      if (jsxEnabled) {
+        const compilerOptions = {
+          jsx: 1, // JsxEmit.React
+          allowNonTsExtensions: true,
+          target: 99, // ScriptTarget.ESNext
+          allowJs: true,
+        };
+        (monaco.languages as any).typescript.typescriptDefaults.setCompilerOptions(compilerOptions);
+        (monaco.languages as any).typescript.javascriptDefaults.setCompilerOptions(compilerOptions);
+      } else {
+        // Default options without JSX
+        const defaultOptions = {
+          allowNonTsExtensions: true,
+          target: 99, // ScriptTarget.ESNext
+          allowJs: true,
+        };
+        (monaco.languages as any).typescript.typescriptDefaults.setCompilerOptions(defaultOptions);
+        (monaco.languages as any).typescript.javascriptDefaults.setCompilerOptions(defaultOptions);
+      }
+
       // Use setTimeout to avoid synchronous setState during render cycle warning
       const timer = setTimeout(() => setIsReady(true), 10);
       return () => clearTimeout(timer);
     }
-  }, [monaco, monacoThemeId]);
+  }, [monaco, monacoThemeId, jsxEnabled]);
 
   // 2. Handle Vim Mode
   useEffect(() => {
@@ -115,7 +139,6 @@ export function CodeEditor({
       // Only show if linting is actually ON
       const allMarkers = linting ? [...markers, ...internalMarkers] : [];
       
-      console.log(`[CodeEditor] Syncing ${allMarkers.length} markers to decorations. Linting: ${linting}`);
 
       // 1. Sync markers with model for underlining (for prop markers)
       // We always show squigglies if Monaco shows them, but we control our own 'owner' markers
@@ -130,7 +153,7 @@ export function CodeEditor({
           range: new monaco.Range(startLine, 1, startLine, 1),
           options: {
             isWholeLine: true,
-            className: isError ? 'error-line-border' : '',
+            className: '', // Removed error-line-border to prevent solid red bands
             marginClassName: isError ? 'error-marker' : 'warning-marker',
             glyphMarginClassName: isError ? 'error-marker' : 'warning-marker',
             glyphMarginHoverMessage: { value: marker.message },
@@ -190,9 +213,9 @@ export function CodeEditor({
         <div style={{ width: '100%', height: '100%', backgroundColor: 'var(--bg-primary)' }} />
       ) : (
         <Editor
-          key={`${monacoThemeId}-${fontSize}`}
+          key={`${monacoThemeId}-${fontSize}-${language}`}
           height="100%"
-          defaultLanguage="javascript"
+          language={language}
           theme={monacoThemeId}
           value={code}
           onChange={onChange}

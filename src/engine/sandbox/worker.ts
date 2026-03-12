@@ -1,6 +1,5 @@
 import { parentPort, workerData } from 'worker_threads';
 import vm from 'vm';
-import util from 'util';
 import { createRequire } from 'module';
 import * as path from 'path';
 
@@ -10,12 +9,25 @@ const createInterceptedConsole = () => {
 
   const captureMethod = (type: string) => {
     return (...args: unknown[]) => {
-      const serializedArgs = args.map(arg => {
+      let line: number | undefined = undefined;
+      let finalArgs = args;
+
+      // Extract our injected line number metadata if present
+      if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null && '__runner_line' in args[0]) {
+        line = (args[0] as any).__runner_line;
+        finalArgs = args.slice(1);
+      }
+
+      // Send raw data to allow the frontend to handle syntax highlighting
+      const processedArgs = finalArgs.map(arg => {
+        if (arg === null || arg === undefined || typeof arg === 'boolean' || typeof arg === 'number' || typeof arg === 'string') {
+          return arg;
+        }
         try {
           if (typeof arg === 'object') {
-            return util.inspect(arg, { depth: 3, colors: false });
+            return arg; 
           }
-          return arg;
+          return String(arg);
         } catch {
           return '[Unserializable]';
         }
@@ -25,8 +37,9 @@ const createInterceptedConsole = () => {
         type: 'log',
         payload: {
           type,
-          value: serializedArgs,
-          timestamp: Date.now()
+          value: processedArgs,
+          timestamp: Date.now(),
+          line // Include extracted line number
         }
       });
     };
@@ -64,14 +77,42 @@ const sandbox: Record<string, unknown> = {
     }
   },
   fetch: typeof fetch !== 'undefined' ? fetch : undefined,
+  // Provide a minimal React shim for JSX support
+  React: {
+    createElement: (type: unknown, props: Record<string, unknown>, ...children: unknown[]) => ({
+      type,
+      props: { 
+        ...props, 
+        children: children.length <= 1 ? children[0] : children 
+      }
+    }),
+    Fragment: 'React.Fragment'
+  },
+  __capture: (line: number, value: unknown) => {
+    if (value === undefined && !workerData.advanced?.showUndefined) {
+      return value;
+    }
+    parentPort?.postMessage({
+      type: 'capture',
+      payload: {
+        line,
+        value: value // Send raw value
+      }
+    });
+    return value; // Return result for chains
+  }
 };
 
 // If CWD is provided, we allow requiring local modules
-if (workerData.cwd) {
-  const customRequire = createRequire(path.join(workerData.cwd, 'index.js'));
-  sandbox.require = customRequire;
-  sandbox.__dirname = workerData.cwd;
-  sandbox.__filename = path.join(workerData.cwd, 'scratchpad.js');
+if (workerData.cwd && typeof workerData.cwd === 'string') {
+  try {
+    const customRequire = createRequire(path.join(workerData.cwd, 'index.js'));
+    sandbox.require = customRequire;
+    sandbox.__dirname = workerData.cwd;
+    sandbox.__filename = path.join(workerData.cwd, 'scratchpad.js');
+  } catch (err) {
+    console.error('[Worker] Failed to setup CWD:', err);
+  }
 }
 
 const context = vm.createContext(sandbox);
