@@ -219,7 +219,7 @@ const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, is
           {name}
         </span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '20px', whiteSpace: 'nowrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '24px', whiteSpace: 'nowrap', paddingRight: '4px' }}>
         {shortcut && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px' }}>{shortcut}</span>}
         {hasSubmenu && <ChevronRight size={13} color="var(--text-muted)" />}
       </div>
@@ -238,7 +238,7 @@ interface SubmenuProps {
 const SubmenuContainer = ({ top, left, width = '200px', children, onMouseEnter }: SubmenuProps) => (
   <div 
     style={{
-      position: 'fixed', top, left, width: width === '200px' ? 'auto' : width, minWidth: '180px',
+      position: 'fixed', top, left, width: width === '200px' ? 'fit-content' : width, minWidth: '220px',
       backgroundColor: 'var(--bg-menu)', 
       borderRadius: '8px', 
       boxShadow: '0 10px 40px rgba(0,0,0,0.6), 0 0 0 1px var(--border-color)',
