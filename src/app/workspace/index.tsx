@@ -781,7 +781,7 @@ export function Workspace() {
               <div style={{ cursor: isRunning ? 'pointer' : 'default', opacity: isRunning ? 1 : 0.4 }} onClick={isRunning ? stopCode : undefined} title="Stop (Ctrl+Shift+R)">
                 <Square size={18} color="var(--text-muted)" />
               </div>
-              <div style={{ width: '24px', height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0', opacity: 0.5 }} />
+              <div style={{ width: '24px', height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.15)', margin: '4px 0' }} />
               <div style={{ cursor: 'pointer' }} onClick={() => setIsSnippetsModalOpen(true)} title="Snippets (Ctrl+B)">
                 <Bookmark size={20} color="var(--text-muted)" />
               </div>
