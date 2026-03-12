@@ -234,7 +234,7 @@ export function ConsolePanel({
           if (log.type === 'info') { color = 'var(--color-info)'; badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeText = 'INFO'; }
           if (log.type === 'log') { color = isCaptured ? 'var(--text-muted)' : 'var(--color-log)'; }
 
-          const topOffset = matchLines && log.line ? ((log.line - 1) * finalLineHeight) + 16 : undefined;
+          const topOffset = matchLines && log.line ? ((log.line - 1) * finalLineHeight) : undefined;
 
           return (
             <div key={k} className={`log-entry ${log.type}`} style={{ 
@@ -258,8 +258,23 @@ export function ConsolePanel({
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-all',
               overflow: 'hidden',
-              marginBottom: isError ? '12px' : '0'
+              marginBottom: isError ? '12px' : '0',
+              borderBottom: '1px dotted rgba(255,255,255,0.05)'
             }}>
+              {/* Debug Line Indicator */}
+              {matchLines && (
+                <div style={{ 
+                  position: 'absolute', 
+                  right: '5px', 
+                  top: '0', 
+                  fontSize: '9px', 
+                  color: 'cyan', 
+                  opacity: 0.5,
+                  pointerEvents: 'none'
+                }}>
+                  L{log.line}
+                </div>
+              )}
               {badgeText !== '' && (
                 <span style={{ 
                   fontSize: '10px', 
