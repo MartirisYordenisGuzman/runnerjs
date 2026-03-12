@@ -14,7 +14,7 @@ interface AIChatProps {
   apiKey: string;
   currentCode: string;
   onOpenSettings: () => void;
-  onSendMessage: (messages: ChatMessage[]) => void;
+  onSendMessage: (messages: ChatMessage[]) => Promise<{ success?: boolean; error?: string }>;
 }
 
 interface CodeBlockProps {
@@ -40,7 +40,7 @@ const CodeBlock = ({ children, className, inline }: CodeBlockProps) => {
   }
 
   return (
-    <div style={{ position: 'relative', margin: '16px 0', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#1e1e1e', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
+    <div style={{ position: 'relative', margin: '16px 0', borderRadius: '12px', overflow: 'hidden', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', width: '100%', maxWidth: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', backgroundColor: 'rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: 'var(--text-muted)' }}>
         <span style={{ fontWeight: 600, letterSpacing: '0.05em' }}>{lang.toUpperCase() || 'CODE'}</span>
         <button 
@@ -53,23 +53,25 @@ const CodeBlock = ({ children, className, inline }: CodeBlockProps) => {
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      <SyntaxHighlighter
-        language={lang || 'javascript'}
-        style={vscDarkPlus}
-        customStyle={{
-          margin: 0,
-          padding: '16px',
-          fontSize: '13px',
-          backgroundColor: 'transparent',
-        }}
-        codeTagProps={{
-          style: {
-            fontFamily: 'var(--font-mono)',
-          }
-        }}
-      >
-        {code}
-      </SyntaxHighlighter>
+      <div style={{ overflowX: 'auto', width: '100%' }}>
+        <SyntaxHighlighter
+          language={lang || 'javascript'}
+          style={vscDarkPlus}
+          customStyle={{
+            margin: 0,
+            padding: '16px',
+            fontSize: '13px',
+            backgroundColor: 'transparent',
+          }}
+          codeTagProps={{
+            style: {
+              fontFamily: 'var(--font-mono)',
+            }
+          }}
+        >
+          {code}
+        </SyntaxHighlighter>
+      </div>
     </div>
   );
 };
@@ -98,11 +100,15 @@ export const AIChat: React.FC<AIChatProps> = ({
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+    setError(null);
 
     const userMessage: ChatMessage = { role: 'user', content: input };
     const newMessages = [...messages, userMessage];
     
-    // Create context-aware system prompt
+    // Update local state immediately so user sees their message
+    setMessages(newMessages);
+    
+    // Create context-aware system prompt for the API call
     const systemPrompt: ChatMessage = {
       role: 'system',
       content: `You are an expert JavaScript developer assistant. You help the user with their code in an interactive playground.
@@ -113,7 +119,10 @@ ${currentCode}
 Provide concise, helpful, and accurate suggestions. If you provide code, always wrap it in markdown code blocks with the language specified (e.g., \`\`\`javascript).`
     };
 
-    onSendMessage([systemPrompt, ...newMessages]);
+    const result = await onSendMessage([systemPrompt, ...newMessages]);
+    if (result && result.error) {
+      setError(result.error);
+    }
     setInput('');
   };
 
@@ -145,9 +154,9 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
         <div style={{ 
           marginTop: '20px',
           padding: '16px', 
-          backgroundColor: 'rgba(234, 179, 8, 0.1)', 
+          backgroundColor: 'var(--bg-toolbar)', 
           borderRadius: '8px',
-          border: '1px solid rgba(234, 179, 8, 0.2)',
+          border: '1px solid var(--border-color)',
           display: 'flex',
           flexDirection: 'column',
           gap: '12px'
@@ -222,9 +231,8 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
             marginTop: '20px', 
             padding: '24px',
             borderRadius: '16px',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'var(--bg-toolbar)',
+            border: '1px solid var(--border-color)',
             textAlign: 'left'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
@@ -265,15 +273,17 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
               {msg.role === 'user' ? 'You' : 'AI'}
             </div>
             <div style={{ 
-              maxWidth: '90%',
-              padding: msg.role === 'user' ? '10px 14px' : '0 14px',
-              borderRadius: '12px',
-              fontSize: '13px',
-              lineHeight: '1.6',
-              backgroundColor: msg.role === 'user' ? 'var(--accent-color)' : 'var(--bg-toolbar)',
-              color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              overflowWrap: 'break-word'
+                padding: msg.role === 'user' ? '10px 14px' : '0 14px',
+                borderRadius: '12px',
+                fontSize: '13px',
+                lineHeight: '1.6',
+                backgroundColor: msg.role === 'user' ? 'var(--accent-color)' : 'var(--bg-toolbar)',
+                color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--border-color)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                overflowWrap: 'break-word',
+                width: 'fit-content',
+                maxWidth: '100%'
             }}>
               {msg.role === 'user' ? (
                 <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>

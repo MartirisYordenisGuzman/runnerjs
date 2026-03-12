@@ -51,32 +51,67 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--border-color);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: var(--text-muted);
 }
 
 /* React Split Gutter Styling */
 .gutter {
-  background-color: #1a1a1a;
+  background-color: var(--bg-primary);
   background-repeat: no-repeat;
   background-position: 50%;
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
   z-index: 10;
 }
 .gutter:hover {
-  background-color: var(--border-highlight);
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
+  background-color: var(--accent-color);
+  opacity: 0.5;
 }
 .gutter.gutter-horizontal {
   cursor: col-resize;
-  width: 1px !important;
+  position: relative;
+  background-color: transparent !important;
 }
+.gutter.gutter-horizontal::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background-color: var(--text-muted);
+  opacity: 0.3;
+  transform: translateX(-50%);
+  transition: all 0.2s ease;
+}
+.gutter.gutter-horizontal:hover::after {
+  background-color: var(--accent-color);
+  opacity: 1;
+}
+
 .gutter.gutter-vertical {
   cursor: row-resize;
-  height: 1px !important;
+  position: relative;
+  background-color: transparent !important;
+}
+.gutter.gutter-vertical::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background-color: var(--text-muted);
+  opacity: 0.3;
+  transform: translateY(-50%);
+  transition: all 0.2s ease;
+}
+.gutter.gutter-vertical:hover::after {
+  background-color: var(--accent-color);
+  opacity: 1;
 }
 
 /* Animations */

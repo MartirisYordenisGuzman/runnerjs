@@ -13,10 +13,11 @@ export interface VSCodeTheme {
 }
 
 export interface ThemeMapping {
-  // Mapping of VS Code color keys to our CSS variables
   '--bg-primary': string;
   '--bg-secondary': string;
   '--bg-toolbar': string;
+  '--bg-menu': string;
+  '--bg-item-hover': string;
   '--text-primary': string;
   '--text-muted': string;
   '--border-color': string;
@@ -27,12 +28,14 @@ export interface ThemeMapping {
 }
 
 export const VSCODE_TO_UI_MAP: { [key in keyof ThemeMapping]: string | string[] } = {
-  '--bg-primary': ['editor.background', 'sideBar.background'],
-  '--bg-secondary': ['sideBar.background', 'editor.background'],
-  '--bg-toolbar': ['titleBar.activeBackground', 'editor.background'],
+  '--bg-primary': ['editor.background'],
+  '--bg-secondary': ['editor.background', 'sideBar.background'],
+  '--bg-toolbar': ['sideBar.background', 'titleBar.activeBackground', 'editor.background'],
+  '--bg-menu': ['menu.background', 'list.hoverBackground', 'sideBar.background'],
+  '--bg-item-hover': ['list.hoverBackground', 'menu.selectionBackground'],
   '--text-primary': ['editor.foreground', 'sideBar.foreground'],
   '--text-muted': ['descriptionForeground', 'sideBar.foreground'],
-  '--border-color': ['sideBar.border', 'editorGroup.border'],
+  '--border-color': ['sideBar.border', 'editorGroup.border', 'panel.border'],
   '--border-highlight': ['focusBorder', 'activityBar.activeBorder'],
   '--accent-color': ['button.background', 'activityBarBadge.background'],
   '--editor-line-highlight': ['editor.lineHighlightBackground'],

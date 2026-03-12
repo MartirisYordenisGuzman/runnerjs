@@ -167,7 +167,7 @@ const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, is
   const [isHovered, setIsHovered] = useState(false);
   
   if (isSeparator) {
-    return <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.08)', margin: '4px 0' }} />;
+    return <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0', opacity: 0.5 }} />;
   }
 
   return (
@@ -178,7 +178,7 @@ const MenuItem = ({ name, color, shortcut, onClick, onMouseEnter, hasSubmenu, is
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center',
-        backgroundColor: isHovered ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
+        backgroundColor: isHovered ? 'var(--bg-item-hover)' : 'transparent',
         transition: 'background-color 0.1s ease',
         borderRadius: '4px',
         margin: '0 4px',
@@ -238,9 +238,9 @@ const SubmenuContainer = ({ top, left, width = '200px', children, onMouseEnter }
   <div 
     style={{
       position: 'fixed', top, left, width,
-      backgroundColor: '#1c1c1c', 
+      backgroundColor: 'var(--bg-menu)', 
       borderRadius: '8px', 
-      boxShadow: '0 10px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1)',
+      boxShadow: '0 10px 40px rgba(0,0,0,0.6), 0 0 0 1px var(--border-color)',
       zIndex: 100, padding: '4px 0',
       display: 'flex', flexDirection: 'column', color: 'var(--text-primary)',
       animation: 'fadeIn 0.1s ease-out'
@@ -316,14 +316,19 @@ export function Workspace() {
   const editorLineHeight = useMemo(() => Math.max(8, Math.round(settings.appearance.fontSize * 1.35)), [settings.appearance.fontSize]);
   const [markers, setMarkers] = useState<monaco.editor.IMarkerData[]>([]);
 
-  const deepMerge = useCallback(<T extends object>(target: T, source: any): T => {
+  const deepMerge = useCallback(<T extends object>(target: T, source: object | null | undefined): T => {
     if (!source || typeof source !== 'object') return target;
-    const result = { ...target } as any;
-    for (const key in source) {
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && target[key as keyof T] && typeof target[key as keyof T] === 'object') {
-        result[key] = deepMerge(target[key as keyof T] as any, source[key]);
+    const result = { ...target } as Record<string, unknown>;
+    const sourceObj = source as Record<string, unknown>;
+    for (const key in sourceObj) {
+      const sourceValue = sourceObj[key];
+      const targetValue = (target as Record<string, unknown>)[key];
+      
+      if (sourceValue && typeof sourceValue === 'object' && !Array.isArray(sourceValue) && 
+          targetValue && typeof targetValue === 'object') {
+        result[key] = deepMerge(targetValue as object, sourceValue as object);
       } else {
-        result[key] = source[key];
+        result[key] = sourceValue;
       }
     }
     return result as T;
@@ -506,8 +511,8 @@ export function Workspace() {
     });
   }, [activeTabId]);
 
-  const handleSendToAI = useCallback(async (messages: ChatMessage[]) => {
-    if (isChatLoading) return;
+  const handleSendToAI = useCallback(async (messages: ChatMessage[]): Promise<{ success?: boolean; error?: string }> => {
+    if (isChatLoading) return { error: 'Chat is busy' };
     setIsChatLoading(true);
     if (activeSidePane !== 'chat') setActiveSidePane('chat');
     try {
@@ -648,13 +653,13 @@ export function Workspace() {
 
   const renderContent = () => {
     const editorPanel = (
-      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', position: 'relative', height: '100%', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', position: 'relative', height: '100%', overflow: 'hidden', flex: activeSidePane === 'chat' ? undefined : 1 }}>
         {isOutputVisible ? (
           <Split 
             key={layoutDirection}
             sizes={splitSizes} 
             minSize={100} 
-            gutterSize={1} 
+            gutterSize={6} 
             direction={layoutDirection} 
             onDragEnd={setSplitSizes} 
             style={{ 
@@ -665,7 +670,7 @@ export function Workspace() {
               overflow: 'hidden' 
             }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', height: '100%', width: '100%' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%', width: '100%' }}>
               <CodeEditor 
                 key={`${activeTabId}-${settings.appearance.theme}-${settings.appearance.fontSize}`} 
                 code={activeTab.code} 
@@ -689,7 +694,7 @@ export function Workspace() {
                 signatures={settings.general.signatures}
               />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', height: '100%', width: '100%' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%', width: '100%' }}>
               <ConsolePanel 
                 logs={activeTab.logs} 
                 executionTime={activeTab.executionTime} 
@@ -728,7 +733,7 @@ export function Workspace() {
 
     if (activeSidePane === 'chat') {
       return (
-        <Split sizes={chatSplitSizes} minSize={[250, 400]} gutterSize={1} direction="horizontal" onDragEnd={setChatSplitSizes} style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden' }}>
+        <Split sizes={chatSplitSizes} minSize={[250, 400]} gutterSize={6} direction="horizontal" onDragEnd={setChatSplitSizes} style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden' }}>
           <div style={{ height: '100%', backgroundColor: 'var(--bg-secondary)', overflow: 'hidden' }}>
             <AIChat messages={chatMessages} setMessages={setChatMessages} isLoading={isChatLoading} provider={settings.ai.provider} apiKey={settings.ai.provider === 'openai' ? settings.ai.openaiApiKey : settings.ai.geminiApiKey} currentCode={activeTab.code} onOpenSettings={() => setIsSettingsModalOpen(true)} onSendMessage={handleSendToAI} />
           </div>
@@ -743,7 +748,7 @@ export function Workspace() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-primary)', overflow: 'hidden' }}>
       <div style={{ height: '44px', backgroundColor: 'var(--bg-toolbar)', display: 'flex', alignItems: 'center', padding: '0 16px 0 4px', borderBottom: '1px solid var(--border-color)', flexShrink: 0 }}>
-        <div onClick={() => setIsMenuOpen(!isMenuOpen)} style={{ cursor: 'pointer', padding: '8px', backgroundColor: isMenuOpen ? '#333' : 'transparent', borderRadius: '6px', display: 'flex', alignItems: 'center', marginRight: '8px' }}>
+        <div onClick={() => setIsMenuOpen(!isMenuOpen)} style={{ cursor: 'pointer', padding: '8px', backgroundColor: isMenuOpen ? 'var(--bg-item-hover)' : 'transparent', borderRadius: '6px', display: 'flex', alignItems: 'center', marginRight: '8px' }}>
           <Menu size={20} color={isMenuOpen ? 'var(--text-primary)' : 'var(--text-muted)'} />
         </div>
         <div style={{ width: '1px', height: '20px', backgroundColor: 'var(--border-color)', marginRight: '8px' }} />
@@ -755,7 +760,7 @@ export function Workspace() {
             <Plus size={18} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={createNewTab} />
           </div>
         )}
-        <div style={{ flex: 1, height: '100%', WebkitAppRegion: 'drag' } as any} />
+        <div style={{ flex: 1, height: '100%', WebkitAppRegion: 'drag' } as React.CSSProperties} />
         <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
           <Minus size={16} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('minimize')} />
           <AppWindow size={14} color="var(--text-muted)" style={{ cursor: 'pointer' }} onClick={() => window.electronAPI.windowControls('maximize')} />
@@ -785,7 +790,7 @@ export function Workspace() {
       {isMenuOpen && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setIsMenuOpen(false)} />
-          <div style={{ position: 'fixed', top: '40px', left: '56px', width: '200px', backgroundColor: '#1c1c1c', borderRadius: '8px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', zIndex: 50, padding: '8px 0' }}>
+          <div style={{ position: 'fixed', top: '40px', left: '56px', width: '200px', backgroundColor: 'var(--bg-menu)', borderRadius: '8px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', zIndex: 50, padding: '8px 0' }}>
             {['File', 'Edit', 'Action', 'Tools', 'View', 'Themes', 'Window', 'Help'].map(item => (
               <MenuItem key={item} name={item} hasSubmenu onMouseEnter={() => setActiveSubmenu(item)} color={(item === 'Action') ? '#eab308' : undefined} />
             ))}

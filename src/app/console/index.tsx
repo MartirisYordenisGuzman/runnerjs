@@ -148,6 +148,7 @@ export function ConsolePanel({
       paddingRight: matchLines ? '0' : '20px',
       boxSizing: 'border-box', 
       backgroundColor: 'var(--bg-secondary)', 
+      color: 'var(--text-primary)',
       fontFamily: 'var(--font-mono)', 
       fontSize: `${fontSize}px`,
       lineHeight: `${finalLineHeight}px`,
