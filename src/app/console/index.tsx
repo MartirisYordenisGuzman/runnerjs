@@ -18,6 +18,7 @@ interface ConsolePanelProps {
 const ConsoleValue = ({ value, highlighting = true, isError = false }: { value: unknown, highlighting?: boolean, isError?: boolean }) => {
   if (value === null) return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>null</span>;
   if (value === undefined) return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>undefined</span>;
+  if (value === '=>') return <span style={{ color: highlighting ? '#ae81ff' : 'inherit', opacity: 0.7 }}>⇒</span>;
   
   if (typeof value === 'string') {
     const isCodeFrame = value.includes('|') && (value.includes('>') || value.includes('^'));
