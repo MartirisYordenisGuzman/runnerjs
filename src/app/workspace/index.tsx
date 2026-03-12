@@ -609,6 +609,8 @@ export function Workspace() {
         else if (key === ',' || key === 'comma' || e.code === 'Comma') { e.preventDefault(); setIsSettingsModalOpen(true); }
         else if (key === '\\' || e.code === 'Backslash') { e.preventDefault(); setIsSidebarVisible(v => !v); }
         else if (key === 'j') { e.preventDefault(); setIsOutputVisible(v => !v); }
+        else if (key === 'b') { e.preventDefault(); setIsSnippetsModalOpen(true); }
+        else if (key === 'i') { e.preventDefault(); setIsNpmModalOpen(true); }
         else if (key === 'w') { e.preventDefault(); handleConfirmCloseTab(activeTabId); }
       } else if (isAlt && isShift && key === 'f') {
           e.preventDefault();
@@ -779,10 +781,11 @@ export function Workspace() {
               <div style={{ cursor: isRunning ? 'pointer' : 'default', opacity: isRunning ? 1 : 0.4 }} onClick={isRunning ? stopCode : undefined} title="Stop (Ctrl+Shift+R)">
                 <Square size={18} color="var(--text-muted)" />
               </div>
-              <div style={{ cursor: 'pointer' }} onClick={() => setIsSnippetsModalOpen(true)} title="Snippets">
+              <div style={{ width: '24px', height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0', opacity: 0.5 }} />
+              <div style={{ cursor: 'pointer' }} onClick={() => setIsSnippetsModalOpen(true)} title="Snippets (Ctrl+B)">
                 <Bookmark size={20} color="var(--text-muted)" />
               </div>
-              <div style={{ cursor: 'pointer' }} onClick={() => setIsNpmModalOpen(true)} title="NPM Packages">
+              <div style={{ cursor: 'pointer' }} onClick={() => setIsNpmModalOpen(true)} title="NPM Packages (Ctrl+I)">
                 <Download size={20} color="var(--text-muted)" />
               </div>
               <div style={{ cursor: 'pointer' }} onClick={() => setActiveSidePane(activeSidePane === 'chat' ? null : 'chat')} title="AI Chat">
@@ -856,10 +859,10 @@ export function Workspace() {
           )}
           {activeSubmenu?.startsWith('Tools') && (
             <SubmenuContainer top="160px" left="256px" width="200px" onMouseEnter={() => setActiveSubmenu('Tools')}>
-              <MenuItem name="Snippets" onClick={() => setIsSnippetsModalOpen(true)} />
+              <MenuItem name="Snippets" shortcut="Ctrl+B" onClick={() => setIsSnippetsModalOpen(true)} />
               <MenuItem name="Environment Variables" onClick={() => setIsEnvVarsModalOpen(true)} />
-              <MenuItem name="NPM Packages" onClick={() => setIsNpmModalOpen(true)} />
-              <MenuItem name="Settings" onClick={() => setIsSettingsModalOpen(true)} />
+              <MenuItem name="NPM Packages" shortcut="Ctrl+I" onClick={() => setIsNpmModalOpen(true)} />
+              <MenuItem name="Settings" shortcut="Ctrl+," onClick={() => setIsSettingsModalOpen(true)} />
             </SubmenuContainer>
           )}
           {activeSubmenu?.startsWith('View') && (
