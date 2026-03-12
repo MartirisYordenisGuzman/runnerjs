@@ -201,7 +201,14 @@ export class SandboxService {
                     if (t.isMemberExpression(callee) && t.isIdentifier(callee.object) && callee.object.name === 'console') return;
                   }
                   
-                  const line = path.node.loc?.start.line || 0;
+                  let line = path.node.loc?.start.line || 0;
+                  
+                  // Fallback: Calculate line number manually if Babel's loc is missing or shifted
+                  if (typeof path.node.start === 'number' && typeof code === 'string') {
+                    line = code.substring(0, path.node.start).split('\n').length;
+                  }
+
+                  if (line === 0) return;
                   path.replaceWith(t.expressionStatement(
                     t.callExpression(t.identifier('__capture'), [
                       t.numericLiteral(line),

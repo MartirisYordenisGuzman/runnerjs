@@ -143,9 +143,9 @@ export function ConsolePanel({
       style={{ 
         height: '100%', 
       overflowY: 'auto', 
-      paddingTop: matchLines ? '16px' : '20px', // 16px matches editor (8px wrapper + 8px Monaco padding)
+      paddingTop: matchLines ? '16px' : '20px', 
       paddingBottom: '20px',
-      paddingLeft: matchLines ? '0' : '20px',
+      paddingLeft: matchLines ? '10px' : '20px',
       paddingRight: matchLines ? '0' : '20px',
       boxSizing: 'border-box', 
       backgroundColor: 'var(--bg-secondary)', 
@@ -258,23 +258,8 @@ export function ConsolePanel({
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-all',
               overflow: 'hidden',
-              marginBottom: isError ? '12px' : '0',
-              borderBottom: '1px dotted rgba(255,255,255,0.05)'
+              marginBottom: isError ? '12px' : '0'
             }}>
-              {/* Debug Line Indicator */}
-              {matchLines && (
-                <div style={{ 
-                  position: 'absolute', 
-                  right: '5px', 
-                  top: '0', 
-                  fontSize: '9px', 
-                  color: 'cyan', 
-                  opacity: 0.5,
-                  pointerEvents: 'none'
-                }}>
-                  L{log.line}
-                </div>
-              )}
               {badgeText !== '' && (
                 <span style={{ 
                   fontSize: '10px', 
