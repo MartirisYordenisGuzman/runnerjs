@@ -273,7 +273,14 @@ export function ConsolePanel({
                   {badgeText}
                 </span>
               )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden', flex: 1 }}>
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'row', 
+                gap: '8px', 
+                overflow: 'hidden', 
+                flex: 1,
+                alignItems: 'baseline' // Align text baselines for => and result
+              }}>
                 {log.value.map((val, m) => (
                    <ConsoleValue key={m} value={val} highlighting={highlighting} isError={isError} />
                 ))}

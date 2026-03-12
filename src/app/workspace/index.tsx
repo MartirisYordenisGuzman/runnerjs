@@ -467,7 +467,16 @@ export function Workspace() {
         if (t.id !== tabId) return t;
         const newLogs = [...t.logs];
         if (result.error) newLogs.push({ type: 'error', value: [result.error], timestamp: Date.now() });
-        else if (result.result !== undefined && !settings.advanced.expressionResults) newLogs.push({ type: 'log', value: ['=>', String(result.result)], timestamp: Date.now() });
+        else if (result.result !== undefined && settings.advanced.expressionResults) {
+          const lines = codeToRun.split('\n');
+          newLogs.push({ 
+            type: 'log', 
+            value: ['=>', String(result.result)], 
+            timestamp: Date.now(),
+            line: lines.length, // Align with the last line of the code
+            isCaptured: true
+          });
+        }
         return { ...t, logs: newLogs, executionTime: result.executionTimeMs };
       }));
     } catch (err) {

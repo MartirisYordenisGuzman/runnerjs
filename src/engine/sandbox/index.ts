@@ -40,6 +40,7 @@ export class SandboxService {
         buildSettings?.proposals?.regexpModifiers ||
         advancedSettings?.loopProtection ||
         advancedSettings?.expressionResults ||
+        advancedSettings?.matchLines ||
         (buildSettings?.proposals?.decorators && !buildSettings?.transform?.typescript);
 
       // Warn the user early if they have enabled a proposal that's not supported
@@ -149,7 +150,7 @@ export class SandboxService {
           }));
         }
 
-        if (advancedSettings?.expressionResults) {
+        if (advancedSettings?.expressionResults || advancedSettings?.matchLines) {
           // Plugin 1: Inject line numbers into console calls
           safePlugins.push(({ types: t }: any) => ({
             visitor: {
@@ -178,7 +179,9 @@ export class SandboxService {
               }
             }
           }));
+        }
 
+        if (advancedSettings?.expressionResults) {
           // Plugin 2: Capture expression results
           safePlugins.push(({ types: t }: any) => ({
             visitor: {
