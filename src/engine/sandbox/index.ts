@@ -1,4 +1,4 @@
-import { Worker } from 'worker_threads';
+import { ChildProcess, fork } from 'child_process';
 import * as path from 'path';
 import { transform as sucraseTransform } from 'sucrase';
 import * as Babel from '@babel/standalone';
@@ -6,23 +6,21 @@ import type { ExecutionCompleteMessage, AppSettings } from '../../shared/ipc';
 import { emitExecutionComplete, emitConsoleLog, emitWorkerStatus } from '../../core/event-bus';
 
 // Module-level variable to ensure it's a true singleton across the Main process.
-let activeWorker: Worker | null = null;
+let activeProcess: ChildProcess | null = null;
 
 /**
  * Manages the sandbox execution and enforces security limits.
- * Uses worker_threads to allow terminating long-running sync or async loops.
+ * Uses child_process.fork to execute user code in a dedicated Node.js process.
  */
 export class SandboxService {
 
   /**
    * Phase 1: Core Transformation (TS, JSX, Proposals)
-   * Uses Sucrase for speed or Babel for experimental features.
    */
   private static transformPhase(code: string, buildSettings: AppSettings['build']): string {
     const hasProposals = Object.values(buildSettings?.proposals || {}).some(v => v === true);
 
     if (!hasProposals) {
-      // Fast path: Sucrase
       const transforms: string[] = ['imports'];
       if (buildSettings?.transform?.typescript) transforms.push('typescript');
       if (buildSettings?.transform?.jsx) transforms.push('jsx');
@@ -35,7 +33,6 @@ export class SandboxService {
       return result.code;
     }
 
-    // Babel path for proposals
     const plugins = this.buildBabelPlugins(buildSettings?.proposals);
     const presets = ['env'];
     if (buildSettings?.transform?.typescript) presets.push('typescript');
@@ -59,14 +56,12 @@ export class SandboxService {
 
   /**
    * Phase 2: Runtime Instrumentation (Loop Protection, Expression Capture)
-   * Always uses Babel for precise AST manipulation on the generated JS.
    */
   private static instrumentationPhase(code: string, advancedSettings: AppSettings['advanced']): string {
     const plugins: any[] = [];
 
-    // Loop Protection
     if (advancedSettings?.loopProtection) {
-      plugins.push(({ types: t }: any) => ({
+      plugins.push(({ types: t }: { types: any }) => ({
         visitor: {
           "WhileStatement|ForStatement|DoWhileStatement|ForInStatement|ForOfStatement"(path: any) {
             const id = Math.random().toString(36).slice(2, 7);
@@ -98,17 +93,13 @@ export class SandboxService {
       }));
     }
 
-    // Expression Results & Match Lines
     if (advancedSettings?.expressionResults || advancedSettings?.matchLines) {
-      plugins.push(({ types: t }: any) => ({
+      plugins.push(({ types: t }: { types: any }) => ({
         visitor: {
           CallExpression(path: any) {
             const callee = path.node.callee;
-
-            // 1. Do NOT instrument CallExpression arguments to avoid deep noise
             path.get('arguments').forEach((argPath: any) => argPath.skip());
 
-            // 2. Inject line number for console logs
             if (
               t.isMemberExpression(callee) &&
               t.isIdentifier(callee.object) &&
@@ -127,11 +118,9 @@ export class SandboxService {
             }
           },
           ExpressionStatement(path: any) {
-            // Only capture top-level expressions and when expressionResults is on
             if (advancedSettings?.expressionResults && path.parentPath.isProgram()) {
               const expr = path.node.expression;
               
-              // Skip internal calls and noisy globals
               if (t.isCallExpression(expr)) {
                 const callee = expr.callee;
                 if (t.isIdentifier(callee)) {
@@ -143,7 +132,6 @@ export class SandboxService {
               const line = path.node.loc?.start.line || 0;
               if (line === 0) return;
 
-              // SequenceExpression strategy: (__capture(line, expr))
               path.replaceWith(t.expressionStatement(
                 t.callExpression(t.identifier('__capture'), [
                   t.numericLiteral(line),
@@ -172,7 +160,6 @@ export class SandboxService {
     const available = (Babel as any).availablePlugins || {};
 
     if (proposals?.decorators) {
-      // Use version: 'legacy' as it's the most common for scratchpads
       plugins.push(['proposal-decorators', { version: 'legacy' }]);
       plugins.push(['transform-class-properties', { loose: true }]);
       plugins.push(['transform-private-methods', { loose: true }]);
@@ -186,7 +173,6 @@ export class SandboxService {
     if (proposals?.regexpModifiers) plugins.push('transform-regexp-modifiers');
     if (proposals?.optionalChaining) plugins.push('proposal-optional-chaining');
 
-    // Filter to ensure only existing plugins are used
     return plugins.filter(p => {
       const name = Array.isArray(p) ? p[0] : p;
       return !!available[name];
@@ -206,11 +192,7 @@ export class SandboxService {
   }
 
   /**
-   * Evaluates the given code securely in a separate thread.
-   * @param code Raw string (possibly TS/JSX)
-   * @param buildSettings Settings to determine transformation
-   * @param cwd Optional working directory
-   * @param env Optional environment variables
+   * Evaluates the given code securely in a separate Node.js process.
    */
   static async execute(
     code: string, 
@@ -222,13 +204,8 @@ export class SandboxService {
     let finalCode = code;
 
     try {
-      // Defensive pre-processing for ASI issues
       code = code.replace(/^(\s*)([[(])/gm, '$1;$2');
-
-      // Phase 1: Transform
       const transformed = this.transformPhase(code, buildSettings);
-      
-      // Phase 2: Instrumentation
       finalCode = this.instrumentationPhase(transformed, advancedSettings);
 
     } catch (err: any) {
@@ -241,31 +218,27 @@ export class SandboxService {
       };
     }
 
-    // Stop any existing execution and wait for it to fully exit (silently)
     await this.stop(true);
     
     const start = performance.now();
 
     return new Promise((resolve) => {
-      // In production/dev-electron the built worker file is standard CJS
-      const workerPath = path.join(__dirname, 'worker.js');
+      // In production/dev-electron the built runtime file is handled by Electron-Vite
+      const runtimePath = path.join(__dirname, 'runtime.js');
 
-      console.log('[SandboxService] Spawning worker...');
-      const worker = new Worker(workerPath, {
-        workerData: { 
-          code: finalCode, // Fixed: use finalCode instead of transformedCode
-          cwd: typeof cwd === 'string' ? cwd : undefined, 
-          env,
-          advanced: advancedSettings
-        },
+      console.log('[SandboxService] Spawning subprocess...');
+      const child = fork(runtimePath, [], {
+        cwd: typeof cwd === 'string' ? cwd : undefined,
+        env: { ...process.env, ...env },
+        stdio: 'pipe'
       });
-      activeWorker = worker;
+      activeProcess = child;
 
       emitWorkerStatus('running');
 
       let resolved = false;
 
-      worker.on('message', (message) => {
+      child.on('message', (message: { type: string, payload: any }) => {
         if (message.type === 'log') {
           emitConsoleLog(message.payload);
         } else if (message.type === 'capture') {
@@ -273,7 +246,7 @@ export class SandboxService {
             type: 'log',
             value: [message.payload.value],
             timestamp: Date.now(),
-            line: message.payload.line, // Pass line number for Match Lines feature
+            line: message.payload.line,
             isCaptured: true
           });
         } else if (message.type === 'result') {
@@ -289,12 +262,12 @@ export class SandboxService {
         }
       });
 
-      worker.on('error', (err) => {
-        console.error('[SandboxService] Worker error:', err);
+      child.on('error', (err) => {
+        console.error('[SandboxService] Subprocess error:', err);
         if (resolved) return;
         resolved = true;
         
-        if (activeWorker === worker) {
+        if (activeProcess === child) {
           emitWorkerStatus('stopped');
         }
 
@@ -308,11 +281,8 @@ export class SandboxService {
         resolve(payload);
       });
 
-      worker.on('exit', (code) => {
-        console.log(`[SandboxService] Worker exited with code ${code}`);
-        if (code !== 0 && code !== 1) {
-          console.error(`Worker stopped with exit code ${code}`);
-        }
+      child.on('exit', (code) => {
+        console.log(`[SandboxService] Subprocess exited with code ${code}`);
         
         if (!resolved) {
           resolved = true;
@@ -323,24 +293,31 @@ export class SandboxService {
           });
         }
 
-        // Only emit 'stopped' and clear if this is still the active worker
-        if (activeWorker === worker) {
+        if (activeProcess === child) {
           emitWorkerStatus('stopped');
-          activeWorker = null;
+          activeProcess = null;
         }
+      });
+
+      // Start execution
+      child.send({
+        type: 'execute',
+        code: finalCode,
+        cwd,
+        env,
+        advanced: advancedSettings
       });
     });
   }
 
   /**
-   * Forcibly terminates the currently running worker thread.
+   * Forcibly terminates the currently running subprocess.
    */
   static async stop(silent: boolean = false) {
-    if (activeWorker) {
-      console.log('[SandboxService] Terminating active worker...');
-      const workerToStop = activeWorker;
+    if (activeProcess) {
+      console.log('[SandboxService] Terminating active subprocess...');
+      const processToStop = activeProcess;
       
-      // Emit a console log informing the user (if not silent)
       if (!silent) {
         emitConsoleLog({
            type: 'warn',
@@ -349,16 +326,12 @@ export class SandboxService {
         });
       }
 
-      await workerToStop.terminate();
-      console.log('[SandboxService] Worker terminated successfully.');
+      processToStop.kill('SIGKILL');
       
-      // Ensure it's cleared if still matching
-      if (activeWorker === workerToStop) {
-        activeWorker = null;
+      if (activeProcess === processToStop) {
+        activeProcess = null;
         emitWorkerStatus('stopped');
       }
-    } else {
-      console.log('[SandboxService] Stop requested but no active worker found.');
     }
   }
 }

@@ -15,21 +15,35 @@ interface ConsolePanelProps {
   onExplain?: () => void;
 }
 
-const ConsoleValue = ({ value, highlighting = true, isError = false }: { value: unknown, highlighting?: boolean, isError?: boolean }) => {
-  if (value === null) return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>null</span>;
-  if (value === undefined) return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>undefined</span>;
-  if (value === '=>') return <span style={{ color: highlighting ? '#ae81ff' : 'inherit', opacity: 0.7 }}>⇒</span>;
+const ConsoleValue = ({ 
+  value, 
+  highlighting = true, 
+  isError = false,
+  isCaptured = false
+}: { 
+  value: unknown, 
+  highlighting?: boolean, 
+  isError?: boolean,
+  isCaptured?: boolean
+}) => {
+  // Handle new { type, value } protocol
+  const itemType = (value && typeof value === 'object' && 'type' in value) ? (value as { type: string }).type : typeof value;
+  const itemValue = (value && typeof value === 'object' && 'value' in value) ? (value as { value: unknown }).value : value;
+
+  if (itemValue === null || itemType === 'null') return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>null</span>;
+  if (itemValue === undefined || itemType === 'undefined') return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>undefined</span>;
+  if (itemValue === '=>') return <span style={{ color: highlighting ? '#ae81ff' : 'inherit', opacity: 0.7 }}>⇒</span>;
   
-  if (typeof value === 'string') {
-    const isCodeFrame = value.includes('|') && (value.includes('>') || value.includes('^'));
+  if (itemType === 'string') {
+    const strValue = String(itemValue);
+    const isCodeFrame = strValue.includes('|') && (strValue.includes('>') || strValue.includes('^'));
     
     if (isError || isCodeFrame) {
       if (isCodeFrame) {
-        const lines = value.split('\n');
+        const lines = strValue.split('\n');
         return (
           <div style={{ color: 'var(--text-primary)', width: '100%' }}>
             {lines.map((line, i) => {
-              // Match line numbers and pipes: "  2 |", "> 4 |", "    |"
               const lineMatch = line.match(/^(\s*>|\s*)(\s*\d+\s*\||^\s*\|)(.*)$/);
               if (lineMatch) {
                 const [, marker, lineNumber, rest] = lineMatch;
@@ -45,52 +59,45 @@ const ConsoleValue = ({ value, highlighting = true, isError = false }: { value: 
           </div>
         );
       }
-      return <span style={{ color: 'var(--text-primary)', fontWeight: isError ? 'bold' : 'normal' }}>{value}</span>;
+      return <span style={{ color: 'var(--text-primary)', fontWeight: isError ? 'bold' : 'normal' }}>{strValue}</span>;
     }
 
-    let displayValue = value;
-    if (highlighting) {
-      displayValue = `'${value}'`;
-    }
-    return <span style={{ color: highlighting ? '#e6db74' : 'inherit' }}>{displayValue}</span>;
+    // Use yellow color and ALWAYS use quotes as requested by user
+    return <span style={{ color: highlighting ? '#e6db74' : 'inherit' }}>"{strValue}"</span>;
   }
   
-  if (typeof value === 'number') {
-    return <span style={{ color: highlighting ? '#ae81ff' : 'inherit' }}>{value}</span>;
+  if (itemType === 'number') {
+    return <span style={{ color: highlighting ? '#ae81ff' : 'inherit' }}>{String(itemValue)}</span>;
   }
   
-  if (typeof value === 'boolean') {
-    return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>{String(value)}</span>;
+  if (itemType === 'boolean') {
+    return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>{String(itemValue)}</span>;
   }
-  
-  if (Array.isArray(value)) {
+
+  if (itemType === 'array' && Array.isArray(itemValue)) {
     const bracketColor = highlighting ? '#66d9ef' : 'inherit';
     return (
       <span style={{ color: 'inherit' }}>
         <span style={{ color: bracketColor }}>[</span>
-        {value.length > 0 && <span> </span>}
-        {value.map((v, i) => (
+        {itemValue.length > 0 && <span> </span>}
+        {itemValue.map((v, i) => (
           <span key={i}>
-            <ConsoleValue value={v} highlighting={highlighting} />
-            {i < value.length - 1 && <span style={{ color: 'inherit' }}>, </span>}
+            <ConsoleValue value={v} highlighting={highlighting} isCaptured={isCaptured} />
+            {i < itemValue.length - 1 && <span style={{ color: 'inherit' }}>, </span>}
           </span>
         ))}
-        {value.length > 0 && <span> </span>}
+        {itemValue.length > 0 && <span> </span>}
         <span style={{ color: bracketColor }}>]</span>
       </span>
     );
   }
-  
-  if (typeof value === 'object') {
+
+  if (itemType === 'object' && typeof itemValue === 'object' && itemValue !== null) {
     const braceColor = highlighting ? '#66d9ef' : 'inherit';
-    const entries = Object.entries(value as object);
+    const entries = Object.entries(itemValue as Record<string, unknown>);
     
     if (entries.length === 0) {
-      return (
-        <span style={{ color: 'inherit' }}>
-          <span style={{ color: braceColor }}>{'{ }'}</span>
-        </span>
-      );
+      return <span style={{ color: braceColor }}>{'{ }'}</span>;
     }
 
     return (
@@ -101,7 +108,7 @@ const ConsoleValue = ({ value, highlighting = true, isError = false }: { value: 
           <span key={key}>
             <span style={{ color: highlighting ? '#66d9ef' : 'inherit' }}>{key}</span>
             <span style={{ color: 'inherit' }}>: </span>
-            <ConsoleValue value={val} highlighting={highlighting} />
+            <ConsoleValue value={val} highlighting={highlighting} isCaptured={isCaptured} />
             {i < entries.length - 1 && <span style={{ color: 'inherit' }}>, </span>}
           </span>
         ))}
@@ -110,8 +117,12 @@ const ConsoleValue = ({ value, highlighting = true, isError = false }: { value: 
       </span>
     );
   }
+
+  if (itemType === 'serialized' || itemType === 'object') {
+     return <span style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>{String(itemValue)}</span>;
+  }
   
-  return <span>{String(value)}</span>;
+  return <span>{String(itemValue)}</span>;
 };
 
 export function ConsolePanel({ 
@@ -142,15 +153,18 @@ export function ConsolePanel({
     const lineMap = new Map<number, ConsoleLogMessage>();
     
     logs.forEach(log => {
+      // Ensure value is an array to avoid splitting strings into characters
+      const values = Array.isArray(log.value) ? log.value : [log.value];
+      
       // We only group logs that have a line number
       if (log.line) {
         if (lineMap.has(log.line)) {
           const existing = lineMap.get(log.line)!;
           // Append new values to the existing line group
-          existing.value = [...existing.value, ...log.value];
+          existing.value = [...existing.value, ...values];
         } else {
           // Create a shallow clone to avoid mutating original logs
-          const groupedLog = { ...log, value: [...log.value] };
+          const groupedLog = { ...log, value: [...values] };
           lineMap.set(log.line, groupedLog);
           result.push(groupedLog);
         }
@@ -285,8 +299,8 @@ export function ConsolePanel({
               minHeight: `${finalLineHeight}px`,
               lineHeight: `${finalLineHeight}px`,
               whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-              overflow: 'hidden',
+              wordBreak: 'normal',
+              overflow: 'visible',
               marginBottom: isError ? '12px' : '0'
             }}>
               {badgeText !== '' && (
@@ -306,13 +320,24 @@ export function ConsolePanel({
               <div style={{ 
                 display: 'flex', 
                 flexDirection: 'row', 
-                gap: '8px', 
-                overflow: 'hidden', 
+                flexWrap: 'wrap',
+                gap: isCaptured ? '6px' : '8px', 
+                overflow: 'visible',
                 flex: 1,
-                alignItems: 'baseline' // Align text baselines for => and result
+                alignItems: 'baseline',
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'break-word',
+                wordBreak: 'normal'
               }}>
                 {log.value.map((val, m) => (
-                   <ConsoleValue key={m} value={val} highlighting={highlighting} isError={isError} />
+                  <div key={m} style={{ display: 'inline-block', whiteSpace: 'pre-wrap', flexShrink: 0 }}>
+                    <ConsoleValue 
+                      value={val} 
+                      highlighting={highlighting} 
+                      isError={isError} 
+                      isCaptured={isCaptured} 
+                    />
+                  </div>
                 ))}
               </div>
             </div>

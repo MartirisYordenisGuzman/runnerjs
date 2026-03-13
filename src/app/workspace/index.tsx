@@ -378,6 +378,7 @@ export function Workspace() {
             if (savedSession.layout.chatSidebarVisible) setActiveSidePane('chat');
             if (savedSession.layout.chatSplitSizes) setChatSplitSizes(savedSession.layout.chatSplitSizes);
           }
+          if (savedSession.lastWorkingDirectory) setCwd(savedSession.lastWorkingDirectory);
         }
       } catch (err) { console.error('Failed to load initial data:', err); }
     };
@@ -396,12 +397,13 @@ export function Workspace() {
       const sessionData: SessionData = {
         tabs: tabs.map(t => ({ id: t.id, title: t.title, code: t.code, filePath: t.filePath })),
         activeTabId, chatHistory: chatMessages,
-        layout: { sidebarVisible: isSidebarVisible, outputVisible: isOutputVisible, layoutDirection, splitSizes, chatSidebarVisible: activeSidePane === 'chat', chatSplitSizes }
+        layout: { sidebarVisible: isSidebarVisible, outputVisible: isOutputVisible, layoutDirection, splitSizes, chatSidebarVisible: activeSidePane === 'chat', chatSplitSizes },
+        lastWorkingDirectory: cwd
       };
       window.electronAPI.saveSession(sessionData);
     }, 2000);
     return () => clearTimeout(timer);
-  }, [tabs, activeTabId, chatMessages, isSidebarVisible, isOutputVisible, layoutDirection, splitSizes, activeSidePane, chatSplitSizes]);
+  }, [tabs, activeTabId, chatMessages, isSidebarVisible, isOutputVisible, layoutDirection, splitSizes, activeSidePane, chatSplitSizes, cwd]);
 
   useEffect(() => {
     window.electronAPI.getSystemFonts().then(setSystemFonts);
@@ -552,6 +554,10 @@ export function Workspace() {
         setTabs(prev => [...prev, { id: newId, title: fileName, code: result.content!, logs: [], filePath: result.filePath, isDirty: false }]);
         setActiveTabId(newId);
       }
+      
+      // Update CWD to the file's directory
+      const directory = result.filePath.replace(/[\\/][^\\/]+$/, '');
+      if (directory) setCwd(directory);
     }
   }, [activeTab, activeTabId]);
 
@@ -560,6 +566,10 @@ export function Workspace() {
     if (!result.canceled && result.filePath) {
       const fileName = result.filePath.split(/[\\/]/).pop() || 'Untitled';
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, title: fileName, filePath: result.filePath, isDirty: false } : t));
+      
+      // Update CWD to the file's directory
+      const directory = result.filePath.replace(/[\\/][^\\/]+$/, '');
+      if (directory) setCwd(directory);
     }
   }, [activeTab, activeTabId]);
 

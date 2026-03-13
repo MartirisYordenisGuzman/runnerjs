@@ -113,12 +113,14 @@ export interface SessionData {
     chatSidebarVisible?: boolean;
     chatSplitSizes?: number[];
   };
+  lastWorkingDirectory?: string;
   windowState?: {
     width: number;
     height: number;
     x: number;
     y: number;
     isMaximized: boolean;
+    isFullScreen: boolean;
   };
 }
 

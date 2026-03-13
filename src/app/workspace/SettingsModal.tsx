@@ -169,12 +169,12 @@ export function SettingsModal({
   const updateSetting = <C extends keyof AppSettings>(
     category: C, 
     key: string, 
-    value: any
+    value: unknown
   ) => {
     onUpdate({
       ...settings,
       [category]: {
-        ...(settings[category] as Record<string, any>),
+        ...(settings[category] as Record<string, unknown>),
         [key]: value
       }
     });
@@ -553,8 +553,12 @@ export function SettingsModal({
                 <Checkbox 
                   checked={settings.advanced.expressionResults} 
                   onChange={(v) => {
-                    updateSetting('advanced', 'expressionResults', v);
-                    if (!v) updateSetting('advanced', 'matchLines', false);
+                    const newAdvanced = { ...settings.advanced, expressionResults: v };
+                    if (!v) newAdvanced.matchLines = false;
+                    onUpdate({
+                      ...settings,
+                      advanced: newAdvanced
+                    });
                   }} 
                   label="Show the result of each top-level expression" 
                   textColor={textColor} 

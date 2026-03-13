@@ -37,6 +37,7 @@ async function createWindow() {
     width: 1200,
     height: 800,
     isMaximized: false,
+    isFullScreen: false,
     x: undefined as number | undefined,
     y: undefined as number | undefined
   };
@@ -84,12 +85,26 @@ async function createWindow() {
   if (windowState.isMaximized) {
     win.maximize();
   }
+  if (windowState.isFullScreen) {
+    win.setFullScreen(true);
+  }
 
   const saveWindowState = async () => {
     if (!win) return;
     const isMaximized = win.isMaximized();
-    const bounds = isMaximized ? (session?.windowState || { width: 1200, height: 800, x: 0, y: 0 }) : win.getBounds();
+    const isFullScreen = win.isFullScreen();
     
+    // Use getNormalBounds if maximized/fullscreen to capture the restoration state
+    // win.getNormalBounds() is the most reliable way to get the pre-maximized state
+    let bounds: { x: number, y: number, width: number, height: number };
+    try {
+      bounds = (isMaximized || isFullScreen) ? (win as BrowserWindow).getNormalBounds() : win.getBounds();
+    } catch {
+      // Fallback if getNormalBounds fails (e.g. initial call before fully ready)
+      bounds = win.getBounds();
+    }
+    
+    // Re-read current session from disk to avoid using stale values from closure
     const currentSession = await loadSessionData() || {
       tabs: [],
       activeTabId: '',
@@ -106,9 +121,10 @@ async function createWindow() {
       windowState: {
         width: bounds.width,
         height: bounds.height,
-        x: 'x' in bounds ? bounds.x : 0,
-        y: 'y' in bounds ? bounds.y : 0,
-        isMaximized
+        x: bounds.x,
+        y: bounds.y,
+        isMaximized,
+        isFullScreen
       }
     };
     await saveSessionData(newSession);
@@ -116,6 +132,8 @@ async function createWindow() {
 
   win.on('resize', saveWindowState);
   win.on('move', saveWindowState);
+  win.on('enter-full-screen', saveWindowState);
+  win.on('leave-full-screen', saveWindowState);
 
   win.on('closed', () => {
     win = null;
@@ -227,7 +245,15 @@ ipcMain.handle('get-session', async () => {
 });
 
 ipcMain.handle('save-session', async (_event, session: SessionData) => {
-  const success = await saveSessionData(session);
+  // CRITICAL: Merge with existing data on disk to avoid overwriting windowState
+  const existing = await loadSessionData() || {} as SessionData;
+  const merged: SessionData = {
+    ...existing,
+    ...session,
+    // Explicitly preserve windowState if not provided by renderer
+    windowState: session.windowState || existing.windowState
+  };
+  const success = await saveSessionData(merged);
   return { success };
 });
 
