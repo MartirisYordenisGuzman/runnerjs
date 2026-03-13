@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Sparkles } from 'lucide-react';
 import type { ConsoleLogMessage } from '../../shared/ipc';
 
@@ -134,6 +134,35 @@ export function ConsolePanel({
     }
   }, [logs, scrolling]);
 
+  // Group logs by line number when matchLines is active to prevent overlapping
+  const processedLogs = useMemo(() => {
+    if (!matchLines) return logs;
+    
+    const result: ConsoleLogMessage[] = [];
+    const lineMap = new Map<number, ConsoleLogMessage>();
+    
+    logs.forEach(log => {
+      // We only group logs that have a line number
+      if (log.line) {
+        if (lineMap.has(log.line)) {
+          const existing = lineMap.get(log.line)!;
+          // Append new values to the existing line group
+          existing.value = [...existing.value, ...log.value];
+        } else {
+          // Create a shallow clone to avoid mutating original logs
+          const groupedLog = { ...log, value: [...log.value] };
+          lineMap.set(log.line, groupedLog);
+          result.push(groupedLog);
+        }
+      } else {
+        // Logs without line numbers (like global errors) are kept separate
+        result.push(log);
+      }
+    });
+    
+    return result;
+  }, [logs, matchLines]);
+
   const finalLineHeight = lineHeight || 19; // Match Monaco's default line height
 
   return (
@@ -167,16 +196,16 @@ export function ConsolePanel({
         position: 'relative',
         flex: 1,
         width: '100%',
-        minHeight: matchLines ? `${logs.length * finalLineHeight + 100}px` : 'auto',
+        minHeight: matchLines ? `${processedLogs.length * finalLineHeight + 100}px` : 'auto',
         paddingLeft: matchLines ? '16px' : '0',
         overflowX: 'hidden'
       }}>
-        {logs.length === 0 && !matchLines && (
+        {processedLogs.length === 0 && !matchLines && (
            <div style={{ color: 'var(--border-highlight)', fontStyle: 'italic', marginTop: '8px', width: '100%', padding: '0 20px' }}>Waiting for execution...</div>
         )}
 
         {/* Explain Output Button */}
-        {onExplain && logs.length > 0 && (
+        {onExplain && processedLogs.length > 0 && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -216,7 +245,7 @@ export function ConsolePanel({
             <Sparkles size={16} />
           </button>
         )}
-        {logs.map((log, k) => {
+        {processedLogs.map((log, k) => {
           let color = 'var(--text-primary)';
           let badgeBg = 'transparent';
           let badgeText = '';

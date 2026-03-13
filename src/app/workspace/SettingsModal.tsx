@@ -48,8 +48,16 @@ const SectionTitle = ({ children }: { children: React.ReactNode }) => (
   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600, marginTop: '4px' }}>{children}</div>
 );
 
-const SettingRow = ({ label, children, textColor }: { label: string, children: React.ReactNode, textColor: string }) => (
-  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', minHeight: '24px' }}>
+const SettingRow = ({ label, children, textColor, disabled = false }: { label: string, children: React.ReactNode, textColor: string, disabled?: boolean }) => (
+  <div style={{ 
+    display: 'flex', 
+    alignItems: 'center', 
+    marginBottom: '8px', 
+    minHeight: '24px',
+    opacity: disabled ? 0.4 : 1,
+    pointerEvents: disabled ? 'none' : 'auto',
+    transition: 'opacity 0.2s ease'
+  }}>
     <div style={{ 
       width: '130px', 
       fontSize: '11px', 
@@ -74,16 +82,25 @@ const SettingRow = ({ label, children, textColor }: { label: string, children: R
   </div>
 );
 
-const Checkbox = ({ checked, onChange, label, textColor, accentColor }: { checked: boolean, onChange: (v: boolean) => void, label: string, textColor: string, accentColor: string }) => (
-  <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', fontSize: '13px', color: textColor, userSelect: 'none' }}>
+const Checkbox = ({ checked, onChange, label, textColor, accentColor, disabled = false }: { checked: boolean, onChange: (v: boolean) => void, label: string, textColor: string, accentColor: string, disabled?: boolean }) => (
+  <label style={{ 
+    display: 'flex', 
+    alignItems: 'center', 
+    gap: '12px', 
+    cursor: disabled ? 'default' : 'pointer', 
+    fontSize: '13px', 
+    color: textColor, 
+    userSelect: 'none' 
+  }}>
     <div 
-      onClick={() => onChange(!checked)}
+      onClick={() => !disabled && onChange(!checked)}
       style={{ 
         width: '18px', 
         height: '18px', 
         borderRadius: '4px', 
         border: `1px solid ${checked ? accentColor : 'var(--border-color)'}`,
         backgroundColor: checked ? accentColor : 'var(--bg-secondary)',
+        opacity: disabled ? 0.6 : 1,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -535,16 +552,24 @@ export function SettingsModal({
               <SettingRow label="Expression Results" textColor={textColor}>
                 <Checkbox 
                   checked={settings.advanced.expressionResults} 
-                  onChange={(v) => updateSetting('advanced', 'expressionResults', v)} 
+                  onChange={(v) => {
+                    updateSetting('advanced', 'expressionResults', v);
+                    if (!v) updateSetting('advanced', 'matchLines', false);
+                  }} 
                   label="Show the result of each top-level expression" 
                   textColor={textColor} 
                   accentColor={accentColor} 
                 />
               </SettingRow>
-              <SettingRow label="Match Lines" textColor={textColor}>
+              <SettingRow 
+                label="Match Lines" 
+                textColor={textColor}
+                disabled={!settings.advanced.expressionResults}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Checkbox 
                     checked={settings.advanced.matchLines} 
+                    disabled={!settings.advanced.expressionResults}
                     onChange={(v) => updateSetting('advanced', 'matchLines', v)} 
                     label="Align output results with source" 
                     textColor={textColor} 
