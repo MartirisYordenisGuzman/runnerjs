@@ -74,7 +74,7 @@ async function createWindow() {
 
   } else {
     // Packaged production build
-    const indexPath = path.join(app.getAppPath(), 'dist/index.html');
+    const indexPath = path.join(__dirname, '../../dist/index.html');
     console.log(`[Main] Loading production file: ${indexPath}`);
     win.loadFile(indexPath).catch((err) => {
       console.error('[Main] Failed to load production file:', err);
@@ -106,8 +106,8 @@ async function createWindow() {
       windowState: {
         width: bounds.width,
         height: bounds.height,
-        x: (bounds as any).x ?? 0,
-        y: (bounds as any).y ?? 0,
+        x: 'x' in bounds ? bounds.x : 0,
+        y: 'y' in bounds ? bounds.y : 0,
         isMaximized
       }
     };

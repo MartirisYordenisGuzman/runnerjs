@@ -5,17 +5,4 @@ export default defineConfig({
   plugins: [
     react()
   ],
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'monaco': ['monaco-editor'],
-          'babel': ['@babel/standalone'],
-          'vendor': ['react', 'react-dom'],
-          'icons': ['lucide-react']
-        }
-      }
-    },
-    chunkSizeWarningLimit: 1000
-  }
 })
