@@ -57,7 +57,7 @@ function serializeValue(value: unknown, depth = 0, seen = new WeakSet()): Serial
     seen.add(value);
   }
 
-  if (depth >= 5) {
+  if (depth >= 10) {
     return {
       type: 'serialized',
       value: util.inspect(value, { depth: 0, colors: false })

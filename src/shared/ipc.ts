@@ -4,10 +4,13 @@
 
 // Format of intercepted console outputs from the sandbox
 export interface ConsoleLogMessage {
+  id: string;         // Unique ID for tracking measurements
   type: 'log' | 'warn' | 'error' | 'info' | 'debug' | 'table' | 'group' | 'groupCollapsed' | 'groupEnd' | 'time' | 'timeEnd' | 'clear' | 'dir';
   value: unknown[];
   timestamp: number;
   line?: number;      // Line number for Match Lines alignment
+  visualLines?: number; // Number of visual lines the output occupies
+  topOffset?: number;   // Calculated top position for Match Lines
   isCaptured?: boolean; // True if it's an automatically captured expression result
   isPlain?: boolean;    // True if it should be rendered without special formatting (no red box for errors)
   table?: {

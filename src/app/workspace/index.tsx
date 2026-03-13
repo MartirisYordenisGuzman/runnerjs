@@ -431,10 +431,13 @@ export function Workspace() {
         setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [] } : t));
         return;
       }
+      
+      const logWithId = { ...log, id: log.id || Math.random().toString(36).substr(2, 9) };
+      
       setTabs(prev => {
         return prev.map(t => {
           if (t.id === activeTabId) {
-            return { ...t, logs: [...t.logs, log] };
+            return { ...t, logs: [...t.logs, logWithId] };
           }
           return t;
         });
@@ -484,11 +487,11 @@ export function Workspace() {
       setTabs(prev => prev.map(t => {
         if (t.id !== tabId) return t;
         const newLogs = [...t.logs];
-        if (result.error) newLogs.push({ type: 'error', value: [result.error], timestamp: Date.now() });
+        if (result.error) newLogs.push({ id: Math.random().toString(36).substr(2, 9), type: 'error', value: [result.error], timestamp: Date.now() });
         return { ...t, logs: newLogs, executionTime: result.executionTimeMs };
       }));
     } catch (err) {
-      setTabs(prev => prev.map(t => t.id === tabId ? { ...t, logs: [...t.logs, { type: 'error', value: [String(err)], timestamp: Date.now() }] } : t));
+      setTabs(prev => prev.map(t => t.id === tabId ? { ...t, logs: [...t.logs, { id: Math.random().toString(36).substr(2, 9), type: 'error', value: [String(err)], timestamp: Date.now() }] } : t));
     }
   }, [cwd, envVars, settings.build, settings.advanced, settings.formatting.autoFormat, handleFormat]);
 
@@ -731,7 +734,7 @@ export function Workspace() {
                 matchLines={settings.advanced.matchLines}
                 lineHeight={editorLineHeight} 
                 fontSize={settings.appearance.fontSize} 
-
+                fontFamily={settings.appearance.font}
                 onExplain={handleExplainOutput} 
               />
             </div>
