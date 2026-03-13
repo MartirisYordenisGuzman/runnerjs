@@ -1,10 +1,7 @@
 {
   "name": "runjs-clone",
   "private": true,
-  "version": "1.0.0",
-  "description": "A premium, high-performance JS/TS playground inspired by RunJS with integrated AI capabilities.",
-  "author": "Martiris Guzman",
-  "license": "MIT",
+  "version": "0.0.0",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev:ui": "vite",

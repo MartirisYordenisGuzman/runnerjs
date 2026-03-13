@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 dist-electron
+release
 *.local
 
 # Editor directories and files
@@ -23,9 +24,3 @@ dist-electron
 *.njsproj
 *.sln
 *.sw?
-
-# Build outputs
-release/
-.env
-.env.local
-.env.*.local
