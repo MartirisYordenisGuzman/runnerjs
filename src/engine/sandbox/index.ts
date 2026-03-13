@@ -104,6 +104,11 @@ export class SandboxService {
         visitor: {
           CallExpression(path: any) {
             const callee = path.node.callee;
+
+            // 1. Do NOT instrument CallExpression arguments to avoid deep noise
+            path.get('arguments').forEach((argPath: any) => argPath.skip());
+
+            // 2. Inject line number for console logs
             if (
               t.isMemberExpression(callee) &&
               t.isIdentifier(callee.object) &&
@@ -126,10 +131,12 @@ export class SandboxService {
             if (advancedSettings?.expressionResults && path.parentPath.isProgram()) {
               const expr = path.node.expression;
               
-              // Skip internal calls and console
+              // Skip internal calls and noisy globals
               if (t.isCallExpression(expr)) {
                 const callee = expr.callee;
-                if (t.isIdentifier(callee) && callee.name === '__capture') return;
+                if (t.isIdentifier(callee)) {
+                   if (['__capture', 'setInterval', 'setTimeout', 'clearInterval', 'clearTimeout'].includes(callee.name)) return;
+                }
                 if (t.isMemberExpression(callee) && t.isIdentifier(callee.object) && callee.object.name === 'console') return;
               }
 
@@ -137,8 +144,6 @@ export class SandboxService {
               if (line === 0) return;
 
               // SequenceExpression strategy: (__capture(line, expr))
-              // Note: our __capture in worker.ts returns the value, 
-              // so wrapping it in a call is safe and achieves the sequence effect without double evaluation.
               path.replaceWith(t.expressionStatement(
                 t.callExpression(t.identifier('__capture'), [
                   t.numericLiteral(line),
