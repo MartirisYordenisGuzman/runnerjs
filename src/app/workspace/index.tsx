@@ -420,14 +420,17 @@ export function Workspace() {
 
   useEffect(() => {
     window.electronAPI.onExecutionComplete((data) => {
+      console.log('[Workspace] Execution complete event received:', data);
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, executionTime: data.executionTimeMs } : t));
-      setIsRunning(false);
       setMarkers(data.success ? [] : parseErrorStack(data.stack || data.error || ''));
     });
     window.electronAPI.onConsoleOutput((log) => {
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [...t.logs, log] } : t));
     });
-    window.electronAPI.onWorkerStatus(status => setIsRunning(status === 'running'));
+    window.electronAPI.onWorkerStatus(status => {
+      console.log('[Workspace] Worker status updated:', status);
+      setIsRunning(status === 'running');
+    });
     return () => window.electronAPI.removeListeners();
   }, [activeTabId, parseErrorStack]);
 
@@ -459,7 +462,7 @@ export function Workspace() {
   }, [settings.formatting, settings.build.transform.typescript]);
 
   const runCode = useCallback(async (codeToRun: string, tabId: string, isManual = false) => {
-    setMarkers([]); setIsRunning(true);
+    setMarkers([]); 
     setTabs(prev => prev.map(t => t.id === tabId ? { ...t, logs: [] } : t));
     let finalCode = codeToRun;
     if (isManual && settings.formatting.autoFormat) finalCode = await handleFormat(codeToRun, tabId);
@@ -469,12 +472,11 @@ export function Workspace() {
         if (t.id !== tabId) return t;
         const newLogs = [...t.logs];
         if (result.error) newLogs.push({ type: 'error', value: [result.error], timestamp: Date.now() });
-        // Removed automatic final expression result summary (=>) to respect user settings
         return { ...t, logs: newLogs, executionTime: result.executionTimeMs };
       }));
     } catch (err) {
       setTabs(prev => prev.map(t => t.id === tabId ? { ...t, logs: [...t.logs, { type: 'error', value: [String(err)], timestamp: Date.now() }] } : t));
-    } finally { setIsRunning(false); }
+    }
   }, [cwd, envVars, settings.build, settings.advanced, settings.formatting.autoFormat, handleFormat]);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -487,7 +489,7 @@ export function Workspace() {
 
   const stopCode = useCallback(() => {
     if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
-    window.electronAPI.stopExecution(); setIsRunning(false);
+    window.electronAPI.stopExecution();
   }, []);
 
   const createNewTab = useCallback(() => {

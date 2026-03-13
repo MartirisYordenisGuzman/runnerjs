@@ -2,6 +2,33 @@ import { parentPort, workerData } from 'worker_threads';
 import vm from 'vm';
 import { createRequire } from 'module';
 import * as path from 'path';
+import util from 'util';
+
+/**
+ * Safely serializes values for parentPort.postMessage to avoid "could not be cloned" errors.
+ * Functions, Promises, and instances are problematic for structured clone.
+ */
+function serializeValue(value: unknown): any {
+  if (typeof value === "function") {
+    return "[Function]";
+  }
+
+  if (value instanceof Promise) {
+    return "[Promise]";
+  }
+
+  // Simple primitives are usually fine, but for consistency with the request and 
+  // to avoid deep objects with non-clonable properties, we use util.inspect.
+  try {
+    return util.inspect(value, {
+      depth: 3,
+      colors: false,
+      maxArrayLength: 50
+    });
+  } catch (err) {
+    return "[Unserializable Value]";
+  }
+}
 
 // Replace console to send messages back to the parent thread
 const createInterceptedConsole = () => {
@@ -18,26 +45,14 @@ const createInterceptedConsole = () => {
         finalArgs = args.slice(1);
       }
 
-      // Send raw data to allow the frontend to handle syntax highlighting
-      const processedArgs = finalArgs.map(arg => {
-        if (arg === null || arg === undefined || typeof arg === 'boolean' || typeof arg === 'number' || typeof arg === 'string') {
-          return arg;
-        }
-        try {
-          if (typeof arg === 'object') {
-            return arg; 
-          }
-          return String(arg);
-        } catch {
-          return '[Unserializable]';
-        }
-      });
+      // Serialize all arguments to avoid cloning issues
+      const serializedArgs = finalArgs.map(serializeValue);
 
       parentPort?.postMessage({
         type: 'log',
         payload: {
           type,
-          value: processedArgs,
+          value: serializedArgs,
           timestamp: Date.now(),
           line // Include extracted line number
         }
@@ -96,7 +111,7 @@ const sandbox: Record<string, unknown> = {
       type: 'capture',
       payload: {
         line,
-        value: value // Send raw value
+        value: serializeValue(value) // Safe serialization
       }
     });
     return value; // Return result for chains
@@ -124,14 +139,12 @@ try {
     displayErrors: true,
   });
 
-  // Native Promise resolution detection to keep the worker alive if needed,
-  // but since RunJS typically returns immediately while intervals continue,
-  // we notify the parent of the synchronous return value but DON'T exit.
+  // Notify the parent of the synchronous return value (serialized)
   parentPort?.postMessage({
     type: 'result',
     payload: {
       success: true,
-      result: result
+      result: serializeValue(result)
     }
   });
 

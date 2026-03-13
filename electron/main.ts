@@ -510,6 +510,13 @@ onWorkerStatus((status: string) => {
   }
 });
 
+import { onExecutionComplete as onExecutionBusComplete } from '../src/core/event-bus';
+onExecutionBusComplete((data: unknown) => {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('execution-complete', data);
+  }
+});
+
 // Window controls IPC
 ipcMain.on('window-controls', (_event, action) => {
   if (!win || win.isDestroyed()) return;
