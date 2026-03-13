@@ -1,7 +1,10 @@
 {
   "name": "runjs-clone",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "A premium, high-performance JS/TS playground inspired by RunJS with integrated AI capabilities.",
+  "author": "Martiris Guzman",
+  "license": "MIT",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev:ui": "vite",
@@ -9,8 +12,26 @@
     "dev:start": "node start-electron.js",
     "dev": "concurrently -k \"npm run dev:ui\" \"npm run dev:electron\" \"npm run dev:start\"",
     "build": "tsc -b && vite build && tsc -p tsconfig.node.json",
+    "dist": "npm run build && electron-builder",
     "lint": "eslint .",
     "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.martiris.runnerjs",
+    "productName": "RunnerJS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist",
+      "dist-electron",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
   },
   "dependencies": {
     "@babel/standalone": "^7.29.1",
