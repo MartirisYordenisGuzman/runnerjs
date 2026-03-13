@@ -73,6 +73,24 @@ const createInterceptedConsole = () => {
 
 const safeConsole = createInterceptedConsole();
 
+/**
+ * Determines if an expression result should be sent to the UI.
+ * Filters out internal types like Timeout, Interval, etc.
+ */
+function shouldDisplayExpression(value: unknown): boolean {
+  if (value === undefined) return false;
+  if (typeof value === "function") return false;
+
+  if (value && typeof value === "object") {
+    const name = (value as any).constructor?.name;
+    if (name === "Timeout" || name === "Immediate" || name === "Interval") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Create the context for the VM
 const sandbox: Record<string, unknown> = {
   console: safeConsole,
@@ -107,13 +125,17 @@ const sandbox: Record<string, unknown> = {
     if (value === undefined && !workerData.advanced?.showUndefined) {
       return value;
     }
-    parentPort?.postMessage({
-      type: 'capture',
-      payload: {
-        line,
-        value: serializeValue(value) // Safe serialization
-      }
-    });
+
+    if (shouldDisplayExpression(value)) {
+      parentPort?.postMessage({
+        type: 'capture',
+        payload: {
+          line,
+          value: serializeValue(value) // Safe serialization
+        }
+      });
+    }
+
     return value; // Return result for chains
   }
 };
