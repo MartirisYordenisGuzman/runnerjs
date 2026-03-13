@@ -451,9 +451,7 @@ export function SettingsModal({
               <SettingRow label="Activity Bar" textColor={textColor}>
                 <Checkbox checked={settings.appearance.showActivityBar} onChange={(v) => updateSetting('appearance', 'showActivityBar', v)} label="Show activity bar" textColor={textColor} accentColor={accentColor} />
               </SettingRow>
-              <SettingRow label="Console Footer" textColor={textColor}>
-                <Checkbox checked={settings.appearance.showConsoleHeader} onChange={(v) => updateSetting('appearance', 'showConsoleHeader', v)} label="Show 'Console Output' footer" textColor={textColor} accentColor={accentColor} />
-              </SettingRow>
+
             </div>
           )}
 

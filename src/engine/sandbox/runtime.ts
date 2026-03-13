@@ -126,24 +126,30 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
     }
   }
 
+  let executionAborted = false;
+
   // Intercept console
   const extractMetadata = (args: unknown[]) => {
     let line: number | undefined = undefined;
     let finalArgs = args;
-
+    let isPlain = false;
+    
     if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
       const firstArg = args[0] as any;
       if ('__runner_metadata__' in firstArg) {
         line = firstArg.__runner_metadata__.line;
+        isPlain = !!firstArg.isPlain;
         finalArgs = args.slice(1);
       }
     }
-    return { line, finalArgs };
+
+    return { line, finalArgs, isPlain, aborted: false };
   };
 
   const captureMethod = (type: string) => {
     return (...args: unknown[]) => {
-      const { line, finalArgs } = extractMetadata(args);
+      const { line, finalArgs, isPlain, aborted } = extractMetadata(args);
+      if (aborted) return;
 
       // Use util.format only if templates are likely present, otherwise preserve types for highlighting
       let processedValues: SerializedValue[];
@@ -155,7 +161,7 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
 
       process.send?.({
         type: 'log',
-        payload: { type, value: processedValues, timestamp: Date.now(), line }
+        payload: { type, value: processedValues, timestamp: Date.now(), line, isPlain }
       });
     };
   };
@@ -171,7 +177,8 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
     interceptedConsole.clear = () => process.send?.({ type: 'clear' });
 
     interceptedConsole.table = (...args: any[]) => {
-      const { line, finalArgs } = extractMetadata(args);
+      const { line, finalArgs, aborted } = extractMetadata(args);
+      if (aborted) return;
       const data = finalArgs[0];
       
       let tableData: any = null;
@@ -231,12 +238,14 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
 
     interceptedConsole.time = (...args: any[]) => {
       const { finalArgs } = extractMetadata(args);
+      if (executionAborted) return;
       const label = String(finalArgs[0] || 'default');
       timers.set(label, performance.now());
     };
 
     interceptedConsole.timeEnd = (...args: any[]) => {
       const { line, finalArgs } = extractMetadata(args);
+      if (executionAborted) return;
       const label = String(finalArgs[0] || 'default');
       
       const start = timers.get(label);
@@ -266,7 +275,8 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
     };
 
     interceptedConsole.group = (...args: any[]) => {
-      const { line, finalArgs } = extractMetadata(args);
+      const { line, finalArgs, aborted } = extractMetadata(args);
+      if (aborted) return;
       process.send?.({
         type: 'log',
         payload: {
@@ -279,25 +289,13 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
     };
 
     interceptedConsole.groupCollapsed = (...args: any[]) => {
+      const { aborted } = extractMetadata(args);
+      if (aborted) return;
       interceptedConsole.group(...args);
     };
 
     interceptedConsole.groupEnd = () => {
-      process.send?.({
-        type: 'log',
-        payload: {
-          type: 'groupEnd',
-          value: [],
-          timestamp: Date.now()
-        }
-      });
-    };
-
-    interceptedConsole.groupCollapsed = (...args: any[]) => {
-      interceptedConsole.group(...args);
-    };
-
-    interceptedConsole.groupEnd = () => {
+      if (executionAborted) return;
       process.send?.({
         type: 'log',
         payload: {
@@ -313,8 +311,8 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
 
   const interceptedConsole = setupConsole();
 
-  let lastLoopCheck = performance.now();
-  let loopStart = performance.now();
+  let callCount = 0;
+  const MAX_CALLS = 10000;
 
   // Setup global sandbox
   const sandbox = {
@@ -335,22 +333,41 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
       return setInterval(callback, d, ...args);
     },
     __loopStart: () => {
-      loopStart = performance.now();
-      lastLoopCheck = loopStart;
+      callCount = 0;
+      (sandbox as any).__loopCount = 0;
     },
-    __checkLoop: (line?: number) => {
-      const now = performance.now();
-      if (now - lastLoopCheck > 10) {
-        lastLoopCheck = now;
-        if (now - loopStart > 2000) {
-          const msg = 'RangeError: Potential infinite loop: exceeded 2000ms';
-          if (line) {
-            // Emitting as a console error ensures it shows up in the console UI at the correct line
-            (interceptedConsole as any).error({ __runner_line: line }, msg);
-          }
-          throw new Error(msg);
+    __loopCount: 0,
+    __loopGuard: (line?: number) => {
+      (sandbox as any).__loopCount++;
+      if ((sandbox as any).__loopCount > 2000) {
+        if (!executionAborted) {
+          executionAborted = true;
+          (interceptedConsole as any).error(
+            { __runner_metadata__: { line }, isPlain: true },
+            'RangeError: Potential infinite loop: exceeded',
+            2000,
+            'iterations.'
+          );
         }
+        return true; // Signal the transformer to break
       }
+      return false;
+    },
+    __checkCall: (line?: number) => {
+      callCount++;
+      if (callCount > MAX_CALLS) {
+        if (!executionAborted) {
+          executionAborted = true;
+          (interceptedConsole as any).error(
+            { __runner_metadata__: { line }, isPlain: true },
+            'RangeError: Potential infinite recursion: exceeded',
+            MAX_CALLS,
+            'calls'
+          );
+        }
+        return true; // Signal the transformer to return
+      }
+      return false;
     },
     __capture: (line: number, value: unknown) => {
       if (value === undefined && !advanced?.showUndefined) return value;
@@ -407,11 +424,17 @@ process.on('message', (message: { type: string, code: string, cwd?: string, env?
       process.send?.({ type: 'result', payload: { success: true, result: serializeValue(result) } });
     } catch (e: any) {
       isSyncPhase = false;
+      let errorMsg = e.message;
+      
+      if (e instanceof RangeError && e.message.includes('Maximum call stack size exceeded')) {
+        errorMsg = 'RangeError: Maximum call stack size exceeded (Infinite recursion detected)';
+      }
+
       process.send?.({
         type: 'result',
         payload: {
           success: false,
-          error: e.message,
+          error: errorMsg,
           stack: e.stack
         }
       });

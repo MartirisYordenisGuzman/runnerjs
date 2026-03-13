@@ -65,8 +65,22 @@ export class SandboxService {
         visitor: {
           "WhileStatement|ForStatement|DoWhileStatement|ForInStatement|ForOfStatement"(path: any) {
             const line = path.node.loc?.start.line || 0;
-            const check = t.expressionStatement(
-              t.callExpression(t.identifier('__checkLoop'), line > 0 ? [t.numericLiteral(line)] : [])
+            const check = t.ifStatement(
+              t.callExpression(t.identifier('__loopGuard'), line > 0 ? [t.numericLiteral(line)] : []),
+              t.breakStatement()
+            );
+
+            if (path.get('body').isBlockStatement()) {
+              path.get('body').unshiftContainer('body', check);
+            } else {
+              path.get('body').replaceWith(t.blockStatement([check, path.node.body]));
+            }
+          },
+          "FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ObjectMethod|ClassMethod"(path: any) {
+            const line = path.node.loc?.start.line || 0;
+            const check = t.ifStatement(
+              t.callExpression(t.identifier('__checkCall'), line > 0 ? [t.numericLiteral(line)] : []),
+              t.returnStatement()
             );
 
             if (path.get('body').isBlockStatement()) {

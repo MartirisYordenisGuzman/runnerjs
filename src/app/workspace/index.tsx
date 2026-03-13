@@ -311,7 +311,7 @@ export function Workspace() {
     general: { autoRun: true, lineWrap: true, vimKeys: false, autoCloseBrackets: true, scrolling: 'Automatic', confirmClose: false, autocomplete: true, linting: true, hoverInfo: true, signatures: false },
     build: { transform: { typescript: true, jsx: false }, proposals: { optionalChaining: false, regexpModifiers: false, doExpressions: false, functionSent: false, pipelineOperator: false, partialApplication: false, throwExpressions: false, decorators: false } },
     formatting: { autoFormat: false, printWidth: 80, tabWidth: 2, semicolons: true, singleQuotes: false, quoteProps: 'as-needed', jsxQuotes: false, trailingCommas: 'es5', bracketSpacing: true, arrowFunctionParentheses: 'always' },
-    appearance: { theme: 'Dark', font: 'JetBrains Mono', fontSize: 14, showLineNumbers: true, showInvisibles: false, highlightActiveLine: true, showTabBar: true, outputHighlighting: true, showActivityBar: true, showConsoleHeader: true },
+    appearance: { theme: 'Dark', font: 'JetBrains Mono', fontSize: 14, showLineNumbers: true, showInvisibles: false, highlightActiveLine: true, showTabBar: true, outputHighlighting: true, showActivityBar: true },
     ai: { provider: 'openai', openaiModel: 'gpt-4o-mini', openaiApiKey: '', geminiModel: 'gemini-2.0-flash', geminiApiKey: '' },
     advanced: { expressionResults: true, matchLines: true, showUndefined: false, loopProtection: true }
   });
@@ -731,7 +731,7 @@ export function Workspace() {
                 matchLines={settings.advanced.matchLines}
                 lineHeight={editorLineHeight} 
                 fontSize={settings.appearance.fontSize} 
-                showConsoleHeader={settings.appearance.showConsoleHeader}
+
                 onExplain={handleExplainOutput} 
               />
             </div>

@@ -4,11 +4,12 @@
 
 // Format of intercepted console outputs from the sandbox
 export interface ConsoleLogMessage {
-  type: 'log' | 'warn' | 'error' | 'info' | 'debug' | 'table' | 'group' | 'groupEnd' | 'time' | 'timeEnd' | 'clear' | 'dir';
+  type: 'log' | 'warn' | 'error' | 'info' | 'debug' | 'table' | 'group' | 'groupCollapsed' | 'groupEnd' | 'time' | 'timeEnd' | 'clear' | 'dir';
   value: unknown[];
   timestamp: number;
   line?: number;      // Line number for Match Lines alignment
   isCaptured?: boolean; // True if it's an automatically captured expression result
+  isPlain?: boolean;    // True if it should be rendered without special formatting (no red box for errors)
   table?: {
     columns: string[];
     rows: Array<Record<string, unknown>>;
@@ -83,7 +84,6 @@ export interface AppSettings {
     showTabBar: boolean;
     outputHighlighting: boolean;
     showActivityBar: boolean;
-    showConsoleHeader: boolean;
   },
   ai: {
     provider: 'openai' | 'gemini';
