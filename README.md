@@ -1,73 +1,62 @@
-# React + TypeScript + Vite
+# RunnerJS Clone 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A premium, interactive scratchpad for JavaScript and TypeScript, designed for speed, beauty, and intelligent coding assistance.
 
-Currently, two official plugins are available:
+![RunnerJS Interface](public/logo.png)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## ✨ Features
 
-## React Compiler
+- **Real-time Execution**: Instant feedback as you type, with a secure sandboxed environment.
+- **AI-Powered Assistance**: Integrated AI Chat (OpenAI & Gemini) to explain code, debug errors, and generate suggestions.
+- **Match Lines**: Visual alignment between console logs and the corresponding source code lines.
+- **Expression Results**: Automatically capture and display the results of every expression in your code.
+- **Premium Themes**: Support for dozens of VSCode-compatible themes, including professional dark and light modes.
+- **Vim Mode**: Full Vim keybindings support for power users.
+- **NPM Integration**: Install and use any NPM package directly in your scratchpad.
+- **Snippet Management**: Organize and reuse your favorite code blocks with a dedicated library.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠️ Technology Stack
 
-## Expanding the ESLint configuration
+- **Frontend**: [React 19](https://react.dev/), [Vite](https://vitejs.dev/)
+- **Editor**: [Monaco Editor](https://microsoft.github.io/monaco-editor/) (The engine behind VSCode)
+- **Runtime**: [Electron 41](https://www.electronjs.org/)
+- **Transformation**: [Babel](https://babeljs.io/) & [Sucrase](https://sucrase.io/)
+- **Icons**: [Lucide React](https://lucide.dev/)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🚀 Getting Started
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Development
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+To start the development environment:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Distribution
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+To generate a portable Windows executable (.exe):
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm.cmd run dist
 ```
+
+The executable will be generated in the `release/` folder.
+
+## ⌨️ Keyboard Shortcuts
+
+- **Ctrl + R**: Run code
+- **Ctrl + Shift + R**: Stop execution
+- **Ctrl + ,**: Open Settings
+- **Ctrl + \**: Toggle Sidebar
+- **Ctrl + J**: Toggle Output Panel
+- **Ctrl + B**: Open Snippets
+- **Ctrl + I**: Open NPM Packages
+- **Alt + Shift + F**: Format Code
+
+## 📄 License
+
+This project is specialized for private use and experimentation.
+
+---
+Built with ❤️ for the JavaScript community.
