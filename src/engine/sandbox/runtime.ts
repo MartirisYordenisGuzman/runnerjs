@@ -203,7 +203,7 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
           });
         } else {
           Object.keys(data).forEach(key => {
-            const item = data[key];
+            const item = (data as any)[key];
             const row: any = { '(index)': key };
             if (item && typeof item === 'object') {
               Object.keys(item).forEach(k => {

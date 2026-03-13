@@ -67,6 +67,8 @@ export function CodeEditor({
           allowNonTsExtensions: true,
           target: 99, // ScriptTarget.ESNext
           allowJs: true,
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true,
         };
         (monaco.languages as any).typescript.typescriptDefaults.setCompilerOptions(compilerOptions);
         (monaco.languages as any).typescript.javascriptDefaults.setCompilerOptions(compilerOptions);
@@ -76,10 +78,28 @@ export function CodeEditor({
           allowNonTsExtensions: true,
           target: 99, // ScriptTarget.ESNext
           allowJs: true,
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true,
         };
         (monaco.languages as any).typescript.typescriptDefaults.setCompilerOptions(defaultOptions);
         (monaco.languages as any).typescript.javascriptDefaults.setCompilerOptions(defaultOptions);
       }
+
+      // 3. Configure experimental syntax support (suppress false errors)
+      const diagnosticOptions = {
+        // 1109: Expression expected (Partial Application, Throw, etc)
+        // 1135: Expression expected (Pipeline)
+        // 2367: This condition will always return 'false' because the types 'string' and 'Error' have no overlap. (Throw expressions)
+        // 7041: Unreachable code detected (Throw expressions)
+        // 1128: Declaration or statement expected (Do expressions)
+        // 1161: Unterminated string literal (Regexp modifiers sometimes)
+        // 1219: Experimental support for decorators is a feature that is subject to change in a future release.
+        // 1241: Unable to resolve signature of method decorator when called as an expression.
+        // 7027: Unreachable code detected (Throw expressions)
+        ignoreDiagnostics: [1109, 1135, 2367, 7041, 1128, 1219, 1241, 7027]
+      };
+      (monaco.languages as any).typescript.typescriptDefaults.setDiagnosticsOptions(diagnosticOptions);
+      (monaco.languages as any).typescript.javascriptDefaults.setDiagnosticsOptions(diagnosticOptions);
 
       // Use setTimeout to avoid synchronous setState during render cycle warning
       const timer = setTimeout(() => setIsReady(true), 10);
@@ -200,6 +220,12 @@ export function CodeEditor({
     }
   };
 
+  const getModelPath = () => {
+    const isTS = language === 'typescript';
+    if (jsxEnabled) return isTS ? 'model.tsx' : 'model.jsx';
+    return isTS ? 'model.ts' : 'model.js';
+  };
+
   return (
     <div style={{ 
       height: '100%', 
@@ -213,11 +239,12 @@ export function CodeEditor({
         <div style={{ width: '100%', height: '100%', backgroundColor: 'var(--bg-primary)' }} />
       ) : (
         <Editor
-          key={`${monacoThemeId}-${fontSize}-${language}`}
+          key={`${monacoThemeId}-${fontSize}-${language}-${jsxEnabled}`}
           height="100%"
           language={language}
           theme={monacoThemeId}
           value={code}
+          path={getModelPath()}
           onChange={onChange}
           beforeMount={handleEditorWillMount}
           onMount={handleEditorDidMount}

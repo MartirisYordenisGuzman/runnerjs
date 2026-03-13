@@ -312,7 +312,19 @@ export function Workspace() {
     build: { transform: { typescript: true, jsx: false }, proposals: { optionalChaining: false, regexpModifiers: false, doExpressions: false, functionSent: false, pipelineOperator: false, partialApplication: false, throwExpressions: false, decorators: false } },
     formatting: { autoFormat: false, printWidth: 80, tabWidth: 2, semicolons: true, singleQuotes: false, quoteProps: 'as-needed', jsxQuotes: false, trailingCommas: 'es5', bracketSpacing: true, arrowFunctionParentheses: 'always' },
     appearance: { theme: 'Dark', font: 'JetBrains Mono', fontSize: 14, showLineNumbers: true, showInvisibles: false, highlightActiveLine: true, showTabBar: true, outputHighlighting: true, showActivityBar: true },
-    ai: { provider: 'openai', openaiModel: 'gpt-4o-mini', openaiApiKey: '', geminiModel: 'gemini-2.0-flash', geminiApiKey: '' },
+    ai: { 
+      provider: 'openai', 
+      openaiModel: 'gpt-4o-mini', 
+      openaiApiKey: '', 
+      geminiModel: 'gemini-1.5-flash', 
+      geminiApiKey: '',
+      anthropicModel: 'claude-3-5-sonnet-20240620',
+      anthropicApiKey: '',
+      deepseekModel: 'deepseek-chat',
+      deepseekApiKey: '',
+      mistralModel: 'open-mixtral-8x7b',
+      mistralApiKey: ''
+    },
     advanced: { expressionResults: true, matchLines: true, showUndefined: false, loopProtection: true }
   });
 
@@ -537,24 +549,53 @@ export function Workspace() {
     setIsChatLoading(true);
     if (activeSidePane !== 'chat') setActiveSidePane('chat');
     try {
-      const response = await window.electronAPI.askAI(messages, {
+      let apiKey = '';
+      let model = '';
+      
+      if (settings.ai.provider === 'openai') {
+        apiKey = settings.ai.openaiApiKey;
+        model = settings.ai.openaiModel;
+      } else if (settings.ai.provider === 'gemini') {
+        apiKey = settings.ai.geminiApiKey;
+        model = settings.ai.geminiModel;
+      } else if (settings.ai.provider === 'anthropic') {
+        apiKey = settings.ai.anthropicApiKey;
+        model = settings.ai.anthropicModel;
+      } else if (settings.ai.provider === 'deepseek') {
+        apiKey = settings.ai.deepseekApiKey;
+        model = settings.ai.deepseekModel;
+      } else if (settings.ai.provider === 'mistral') {
+        apiKey = settings.ai.mistralApiKey;
+        model = settings.ai.mistralModel;
+      }
+
+      const response = await window.electronAPI.askAI({
         provider: settings.ai.provider,
-        apiKey: settings.ai.provider === 'openai' ? settings.ai.openaiApiKey : settings.ai.geminiApiKey,
-        model: settings.ai.provider === 'openai' ? settings.ai.openaiModel : settings.ai.geminiModel
+        apiKey,
+        messages,
+        context: {
+          currentCode: activeTab.code,
+          consoleOutput: activeTab.logs.map(log => `[${log.type}] ${log.value.join(' ')}`).join('\n'),
+          runtimeError: markers.length > 0 ? markers[0].message : undefined,
+          openFiles: tabs.map(t => ({ name: t.title, content: t.code }))
+        },
+        model
       });
       if (response.error) return { error: response.error };
       setChatMessages(prev => [...prev, { role: 'assistant', content: response.content }]);
       return { success: true };
     } catch (err) { return { error: String(err) }; }
     finally { setIsChatLoading(false); }
-  }, [isChatLoading, activeSidePane, settings.ai]);
+  }, [isChatLoading, activeSidePane, settings.ai, activeTab, tabs, markers]);
 
   const handleExplainOutput = useCallback(() => {
     const logsText = activeTab.logs.map(log => `[${log.type}] ${log.value.join(' ')}`).join('\n');
     if (!logsText.trim()) return;
     const explainMessage: ChatMessage = { role: 'user', content: `Explain this output:\n\`\`\`\n${logsText}\n\`\`\`` };
     setChatMessages(prev => [...prev, explainMessage]);
-    handleSendToAI([{ role: 'system', content: `Expert dev. Context:\n\`\`\`javascript\n${activeTab.code}\n\`\`\`` }, ...chatMessages, explainMessage]);
+    
+    // Pass everything as message history, the service will handle the system prompt via context
+    handleSendToAI([...chatMessages, explainMessage]);
   }, [activeTab, chatMessages, handleSendToAI]);
 
   const handleOpenFile = useCallback(async () => {
@@ -766,7 +807,21 @@ export function Workspace() {
       return (
         <Split sizes={chatSplitSizes} minSize={[250, 400]} gutterSize={6} direction="horizontal" onDragEnd={setChatSplitSizes} style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden' }}>
           <div style={{ height: '100%', backgroundColor: 'var(--bg-secondary)', overflow: 'hidden' }}>
-            <AIChat messages={chatMessages} setMessages={setChatMessages} isLoading={isChatLoading} provider={settings.ai.provider} apiKey={settings.ai.provider === 'openai' ? settings.ai.openaiApiKey : settings.ai.geminiApiKey} currentCode={activeTab.code} onOpenSettings={() => setIsSettingsModalOpen(true)} onSendMessage={handleSendToAI} />
+            <AIChat 
+              messages={chatMessages} 
+              setMessages={setChatMessages} 
+              isLoading={isChatLoading} 
+              provider={settings.ai.provider} 
+              apiKey={
+                settings.ai.provider === 'openai' ? settings.ai.openaiApiKey : 
+                settings.ai.provider === 'gemini' ? settings.ai.geminiApiKey :
+                settings.ai.provider === 'anthropic' ? settings.ai.anthropicApiKey :
+                settings.ai.deepseekApiKey
+              } 
+              currentCode={activeTab.code} 
+              onOpenSettings={() => setIsSettingsModalOpen(true)} 
+              onSendMessage={handleSendToAI} 
+            />
           </div>
           {editorPanel}
         </Split>

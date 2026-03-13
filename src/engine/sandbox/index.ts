@@ -2,7 +2,11 @@ import { ChildProcess, fork } from 'child_process';
 import * as path from 'path';
 import { transform as sucraseTransform } from 'sucrase';
 import * as Babel from '@babel/standalone';
+import partialApplicationPlugin from '@babel/plugin-proposal-partial-application';
 import type { ExecutionCompleteMessage, AppSettings } from '../../shared/ipc';
+
+// Register external plugins in Babel Standalone
+(Babel as any).registerPlugin('proposal-partial-application', partialApplicationPlugin);
 import { emitExecutionComplete, emitConsoleLog, emitWorkerStatus, emitConsoleClear } from '../../core/event-bus';
 
 // Module-level variable to ensure it's a true singleton across the Main process.
@@ -27,16 +31,16 @@ export class SandboxService {
 
       const result = sucraseTransform(code, {
         transforms: transforms as ('imports' | 'typescript' | 'jsx')[],
-        jsxRuntime: 'classic',
+        jsxRuntime: 'automatic',
         production: false
       });
       return result.code;
     }
 
     const plugins = this.buildBabelPlugins(buildSettings?.proposals);
-    const presets = ['env'];
+    const presets: (string | [string, object])[] = ['env'];
     if (buildSettings?.transform?.typescript) presets.push('typescript');
-    if (buildSettings?.transform?.jsx) presets.push('react');
+    if (buildSettings?.transform?.jsx) presets.push(['react', { runtime: 'automatic' }]);
 
     const result = Babel.transform(code, {
       filename: 'sandbox.tsx',
@@ -150,6 +154,9 @@ export class SandboxService {
     const result = Babel.transform(code, {
       filename: 'instrumented.js',
       plugins,
+      parserOpts: {
+        plugins: this.getBabelParserPlugins((advancedSettings as any).proposals) 
+      },
       retainLines: true,
       sourceType: 'unambiguous'
     });
@@ -174,6 +181,7 @@ export class SandboxService {
     if (proposals?.throwExpressions) plugins.push('proposal-throw-expressions');
     if (proposals?.regexpModifiers) plugins.push('transform-regexp-modifiers');
     if (proposals?.optionalChaining) plugins.push('proposal-optional-chaining');
+    if (proposals?.partialApplication) plugins.push('proposal-partial-application');
 
     return plugins.filter(p => {
       const name = Array.isArray(p) ? p[0] : p;
@@ -208,7 +216,12 @@ export class SandboxService {
     try {
       code = code.replace(/^(\s*)([[(])/gm, '$1;$2');
       const transformed = this.transformPhase(code, buildSettings);
-      finalCode = this.instrumentationPhase(transformed, advancedSettings);
+      
+      // Pass both advanced settings and proposals to instrumentation phase
+      finalCode = this.instrumentationPhase(transformed, { 
+        ...advancedSettings, 
+        proposals: buildSettings.proposals 
+      } as AppSettings['advanced']);
 
     } catch (err: any) {
       console.error('[SandboxService] Pipeline failed:', err);

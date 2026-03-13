@@ -5,7 +5,7 @@ import * as https from 'https';
 
 import { SandboxService } from '../src/engine/sandbox';
 import { onConsoleLog, onWorkerStatus, onConsoleClear } from '../src/core/event-bus';
-import { AppSettings, Snippet, SessionData, ChatMessage } from '../src/shared/ipc';
+import { AppSettings, Snippet, SessionData } from '../src/shared/ipc';
 
 let win: BrowserWindow | null = null;
 const SESSION_FILE = path.join(app.getPath('userData'), 'session.json');
@@ -588,113 +588,16 @@ ipcMain.handle('get-zoom-factor', () => {
   return 1;
 });
 
+import { AIService } from '../src/ai/AIService';
+import { AIAPIRequest } from '../src/shared/ipc';
+
+// ... (existing code above) ...
+
 // AI IPC Handler
-ipcMain.handle('ask-ai', async (_event, messages: ChatMessage[], settings: { model: string; apiKey: string; provider?: 'openai' | 'gemini' }) => {
-  const { model, apiKey, provider = 'openai' } = settings;
-  
-  if (!apiKey) {
-    return { content: '', error: `${provider === 'openai' ? 'OpenAI' : 'Gemini'} API Key is missing. Please add it in Settings.` };
-  }
-
-  return new Promise((resolve) => {
-    if (provider === 'openai') {
-      const data = JSON.stringify({
-        model: model || 'gpt-4o-mini',
-        messages: messages,
-      });
-
-      const options = {
-        hostname: 'api.openai.com',
-        port: 443,
-        path: '/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Length': Buffer.byteLength(data)
-        }
-      };
-
-      const req = https.request(options, (res) => {
-        let responseBody = '';
-        res.on('data', (d) => { responseBody += d; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(responseBody);
-            if (parsed.error) {
-              resolve({ content: '', error: parsed.error.message || 'OpenAI API returned an error.' });
-            } else if (parsed.choices && parsed.choices.length > 0) {
-              resolve({ content: parsed.choices[0].message.content });
-            } else {
-              resolve({ content: '', error: 'Received an unexpected response from OpenAI.' });
-            }
-          } catch {
-            resolve({ content: '', error: 'Failed to process OpenAI response.' });
-          }
-        });
-      });
-
-      req.on('error', (error) => {
-        resolve({ content: '', error: `Network error: ${error.message}` });
-      });
-
-      req.write(data);
-      req.end();
-    } else {
-      // Gemini implementation
-      const systemMsg = messages.find(m => m.role === 'system');
-      const chatMessages = messages
-        .filter(m => m.role !== 'system')
-        .map(msg => ({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
-        }));
-
-      const data = JSON.stringify({
-        contents: chatMessages,
-        system_instruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 2048,
-        }
-      });
-
-      const options = {
-        hostname: 'generativelanguage.googleapis.com',
-        port: 443,
-        path: `/v1beta/models/${model || 'gemini-1.5-flash'}:generateContent?key=${apiKey}`,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(data)
-        }
-      };
-
-      const req = https.request(options, (res) => {
-        let responseBody = '';
-        res.on('data', (d) => { responseBody += d; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(responseBody);
-            if (parsed.error) {
-              resolve({ content: '', error: parsed.error.message || 'Gemini API returned an error.' });
-            } else if (parsed.candidates && parsed.candidates[0]?.content?.parts?.[0]?.text) {
-              resolve({ content: parsed.candidates[0].content.parts[0].text });
-            } else {
-              resolve({ content: '', error: 'Received an unexpected response from Gemini.' });
-            }
-          } catch {
-            resolve({ content: '', error: 'Failed to process Gemini response.' });
-          }
-        });
-      });
-
-      req.on('error', (error) => {
-        resolve({ content: '', error: `Network error: ${error.message}` });
-      });
-
-      req.write(data);
-      req.end();
-    }
-  });
+ipcMain.handle('ask-ai', async (_event, request: AIAPIRequest) => {
+  const result = await AIService.handleRequest(request);
+  return {
+    content: result.message || '',
+    error: result.error
+  };
 });

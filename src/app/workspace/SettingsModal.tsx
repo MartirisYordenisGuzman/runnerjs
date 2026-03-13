@@ -463,16 +463,18 @@ export function SettingsModal({
                     onChange={(v: string) => updateSetting('ai', 'provider', v)} 
                     options={[
                       { label: 'OpenAI', value: 'openai' },
-                      { label: 'Google Gemini', value: 'gemini' }
+                      { label: 'Google Gemini', value: 'gemini' },
+                      { label: 'Anthropic', value: 'anthropic' },
+                      { label: 'DeepSeek', value: 'deepseek' },
+                      { label: 'Mistral AI', value: 'mistral' }
                     ]} 
                     inputBg={inputBg}
                     textColor={textColor}
                 />
               </SettingRow>
-
               <div style={{ height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)', margin: '16px 0' }} />
 
-              {settings.ai.provider === 'openai' ? (
+              {settings.ai.provider === 'openai' && (
                 <>
                   <SettingRow label="OpenAI Model" textColor={textColor}>
                     <Select 
@@ -505,17 +507,18 @@ export function SettingsModal({
                     </div>
                   </SettingRow>
                 </>
-              ) : (
+              )}
+
+              {settings.ai.provider === 'gemini' && (
                 <>
                   <SettingRow label="Gemini Model" textColor={textColor}>
                     <Select 
                         value={settings.ai.geminiModel} 
                         onChange={(v: string) => updateSetting('ai', 'geminiModel', v)} 
                         options={[
-                          { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
                           { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
-                          { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro' },
-                          { label: 'Gemini Flash (Latest)', value: 'gemini-flash-latest' }
+                          { label: 'Gemini 1.5 Pro', value: 'gemini-1.5-pro' },
+                          { label: 'Gemini 1.5 Flash', value: 'gemini-1.5-flash' }
                         ]} 
                         inputBg={inputBg}
                         textColor={textColor}
@@ -539,6 +542,112 @@ export function SettingsModal({
                   </SettingRow>
                   <div style={{ marginLeft: '146px', fontSize: '12px', color: 'var(--text-muted)', marginTop: '-4px' }}>
                     <p>Free tier available at <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: 'var(--accent-color)' }}>Google AI Studio</a></p>
+                  </div>
+                </>
+              )}
+
+              {settings.ai.provider === 'anthropic' && (
+                <>
+                  <SettingRow label="Anthropic Model" textColor={textColor}>
+                    <Select 
+                        value={settings.ai.anthropicModel} 
+                        onChange={(v: string) => updateSetting('ai', 'anthropicModel', v)} 
+                        options={[
+                          { label: 'Claude 3.5 Sonnet', value: 'claude-3-5-sonnet-20240620' },
+                          { label: 'Claude 3 Opus', value: 'claude-3-opus-20240229' },
+                          { label: 'Claude 3 Sonnet', value: 'claude-3-sonnet-20240229' },
+                          { label: 'Claude 3 Haiku', value: 'claude-3-haiku-20240307' }
+                        ]} 
+                        inputBg={inputBg}
+                        textColor={textColor}
+                    />
+                  </SettingRow>
+                  <SettingRow label="Anthropic API Key" textColor={textColor}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+                      <input 
+                        type="password" 
+                        value={settings.ai.anthropicApiKey} 
+                        onChange={(e) => updateSetting('ai', 'anthropicApiKey', e.target.value)}
+                        placeholder="sk-ant-..."
+                        className="settings-input"
+                        style={{ 
+                          padding: '8px 12px', borderRadius: '6px', 
+                          backgroundColor: inputBg, color: textColor,
+                          fontSize: '13px', outline: 'none', width: '100%'
+                        }}
+                      />
+                    </div>
+                  </SettingRow>
+                </>
+              )}
+
+              {settings.ai.provider === 'deepseek' && (
+                <>
+                  <SettingRow label="DeepSeek Model" textColor={textColor}>
+                    <Select 
+                        value={settings.ai.deepseekModel} 
+                        onChange={(v: string) => updateSetting('ai', 'deepseekModel', v)} 
+                        options={[
+                          { label: 'DeepSeek Chat', value: 'deepseek-chat' },
+                          { label: 'DeepSeek Coder', value: 'deepseek-coder' }
+                        ]} 
+                        inputBg={inputBg}
+                        textColor={textColor}
+                    />
+                  </SettingRow>
+                  <SettingRow label="DeepSeek API Key" textColor={textColor}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+                      <input 
+                        type="password" 
+                        value={settings.ai.deepseekApiKey} 
+                        onChange={(e) => updateSetting('ai', 'deepseekApiKey', e.target.value)}
+                        placeholder="sk-..."
+                        className="settings-input"
+                        style={{ 
+                          padding: '8px 12px', borderRadius: '6px', 
+                          backgroundColor: inputBg, color: textColor,
+                          fontSize: '13px', outline: 'none', width: '100%'
+                        }}
+                      />
+                    </div>
+                  </SettingRow>
+                </>
+              )}
+
+              {settings.ai.provider === 'mistral' && (
+                <>
+                  <SettingRow label="Mistral Model" textColor={textColor}>
+                    <Select 
+                        value={settings.ai.mistralModel} 
+                        onChange={(v: string) => updateSetting('ai', 'mistralModel', v)} 
+                        options={[
+                          { label: 'Mixtral 8x7B', value: 'open-mixtral-8x7b' },
+                          { label: 'Mistral Small', value: 'mistral-small-latest' },
+                          { label: 'Mistral Medium', value: 'mistral-medium-latest' },
+                          { label: 'Mistral Large', value: 'mistral-large-latest' }
+                        ]} 
+                        inputBg={inputBg}
+                        textColor={textColor}
+                    />
+                  </SettingRow>
+                  <SettingRow label="Mistral API Key" textColor={textColor}>
+                    <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+                      <input 
+                        type="password" 
+                        value={settings.ai.mistralApiKey} 
+                        onChange={(e) => updateSetting('ai', 'mistralApiKey', e.target.value)}
+                        placeholder="Paste your Mistral key here..."
+                        className="settings-input"
+                        style={{ 
+                          padding: '8px 12px', borderRadius: '6px', 
+                          backgroundColor: inputBg, color: textColor,
+                          fontSize: '13px', outline: 'none', width: '100%'
+                        }}
+                      />
+                    </div>
+                  </SettingRow>
+                  <div style={{ marginLeft: '146px', fontSize: '12px', color: 'var(--text-muted)', marginTop: '-4px' }}>
+                    <p>API keys available at <a href="https://console.mistral.ai/api-keys/" target="_blank" style={{ color: 'var(--accent-color)' }}>Mistral Console</a></p>
                   </div>
                 </>
               )}

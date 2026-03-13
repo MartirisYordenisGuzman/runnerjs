@@ -89,11 +89,17 @@ export interface AppSettings {
     showActivityBar: boolean;
   },
   ai: {
-    provider: 'openai' | 'gemini';
+    provider: 'openai' | 'gemini' | 'anthropic' | 'deepseek' | 'mistral';
     openaiModel: string;
     openaiApiKey: string;
     geminiModel: string;
     geminiApiKey: string;
+    anthropicModel: string;
+    anthropicApiKey: string;
+    deepseekModel: string;
+    deepseekApiKey: string;
+    mistralModel: string;
+    mistralApiKey: string;
   },
   advanced: {
     expressionResults: boolean;
@@ -177,7 +183,22 @@ export interface ElectronAPI {
   getSystemFonts: () => Promise<string[]>;
 
   // AI
-  askAI: (messages: ChatMessage[], settings: { model: string; apiKey: string; provider?: 'openai' | 'gemini' }) => Promise<{ content: string; error?: string }>;
+  askAI: (request: AIAPIRequest) => Promise<{ content: string; error?: string }>;
+}
+
+export interface AIContext {
+  currentCode: string;
+  consoleOutput?: string;
+  runtimeError?: string;
+  openFiles?: { name: string, content: string }[];
+}
+
+export interface AIAPIRequest {
+  provider: 'openai' | 'gemini' | 'anthropic' | 'deepseek' | 'mistral';
+  apiKey: string;
+  messages: ChatMessage[];
+  context: AIContext;
+  model?: string;
 }
 
 export interface ChatMessage {

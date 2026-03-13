@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Plus, Bot, User, AlertCircle, Loader2, Copy, Check } from 'lucide-react';
+import { Send, Plus, Bot, User, AlertCircle, Loader2, Copy, Check, Terminal, Code2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -10,7 +10,7 @@ interface AIChatProps {
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   isLoading: boolean;
-  provider: 'openai' | 'gemini' | string | undefined;
+  provider: 'openai' | 'gemini' | 'anthropic' | 'deepseek' | string | undefined;
   apiKey: string;
   currentCode: string;
   onOpenSettings: () => void;
@@ -39,10 +39,15 @@ const CodeBlock = ({ children, className, inline }: CodeBlockProps) => {
     return <code style={{ backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontFamily: 'var(--font-mono)' }}>{children}</code>;
   }
 
+  const Icon = match ? Terminal : Code2;
+
   return (
-    <div style={{ position: 'relative', margin: '16px 0', borderRadius: '12px', overflow: 'hidden', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', width: '100%', maxWidth: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 16px', backgroundColor: 'rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: '11px', color: 'var(--text-muted)' }}>
-        <span style={{ fontWeight: 600, letterSpacing: '0.05em' }}>{lang.toUpperCase() || 'CODE'}</span>
+    <div style={{ position: 'relative', margin: '20px 0', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#0f0f10', border: '1px solid rgba(255,255,255,0.05)', width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '11px', color: 'var(--text-muted)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Icon size={14} style={{ opacity: 0.8 }} />
+          <span style={{ fontWeight: 600, letterSpacing: '0.05em', opacity: 0.8 }}>{lang.toUpperCase() || 'CODE'}</span>
+        </div>
         <button 
           onClick={handleCopy}
           style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', transition: 'color 0.2s' }}
@@ -59,7 +64,7 @@ const CodeBlock = ({ children, className, inline }: CodeBlockProps) => {
           style={vscDarkPlus}
           customStyle={{
             margin: 0,
-            padding: '16px',
+            padding: '20px',
             fontSize: '13px',
             backgroundColor: 'transparent',
           }}
@@ -132,10 +137,15 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
   };
 
   if (!apiKey) {
-    const providerName = provider === 'openai' ? 'OpenAI' : 'Google Gemini';
-    const keyLink = provider === 'openai' 
-      ? "https://platform.openai.com/docs/quickstart" 
-      : "https://aistudio.google.com/app/apikey";
+    const providerConfig: Record<string, { name: string, link: string }> = {
+      openai: { name: 'OpenAI', link: "https://platform.openai.com/api-keys" },
+      gemini: { name: 'Google Gemini', link: "https://aistudio.google.com/app/apikey" },
+      anthropic: { name: 'Anthropic', link: "https://console.anthropic.com/settings/keys" },
+      deepseek: { name: 'DeepSeek', link: "https://platform.deepseek.com/api_keys" },
+      mistral: { name: 'Mistral AI', link: "https://console.mistral.ai/api-keys/" }
+    };
+
+    const config = providerConfig[provider || 'openai'] || providerConfig.openai;
 
     return (
       <div style={{ 
@@ -163,17 +173,17 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
         }}>
           <div style={{ display: 'flex', gap: '8px', color: '#eab308' }}>
             <AlertCircle size={18} />
-            <span style={{ fontSize: '14px', fontWeight: 500 }}>{providerName} API Key Required</span>
+            <span style={{ fontSize: '14px', fontWeight: 500 }}>{config.name} API Key Required</span>
           </div>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-            To use this feature, please enter your {providerName} API key in the <span 
+            To use this feature, please enter your {config.name} API key in the <span 
               onClick={onOpenSettings}
               style={{ color: 'var(--accent-color)', cursor: 'pointer', textDecoration: 'underline' }}
             >settings</span>.
           </p>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            To find out how to get a {providerName} API key, please refer to the documentation: 
-            <a href={keyLink} target="_blank" style={{ color: 'var(--accent-color)', marginLeft: '4px' }}>{providerName} Docs</a>
+            To find out how to get a {config.name} API key, please refer to the documentation: 
+            <a href={config.link} target="_blank" style={{ color: 'var(--accent-color)', marginLeft: '4px' }}>{config.name} Docs</a>
           </p>
         </div>
       </div>
@@ -273,22 +283,27 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
               {msg.role === 'user' ? 'You' : 'AI'}
             </div>
             <div style={{ 
-                padding: msg.role === 'user' ? '10px 14px' : '0 14px',
-                borderRadius: '12px',
+                padding: msg.role === 'user' ? '10px 14px' : '0',
+                borderRadius: msg.role === 'user' ? '12px' : '0',
                 fontSize: '13px',
                 lineHeight: '1.6',
-                backgroundColor: msg.role === 'user' ? 'var(--accent-color)' : 'var(--bg-toolbar)',
+                backgroundColor: msg.role === 'user' ? 'var(--accent-color)' : 'transparent',
                 color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
-                border: msg.role === 'user' ? 'none' : '1px solid var(--border-color)',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                overflowWrap: 'break-word',
-                width: 'fit-content',
-                maxWidth: '100%'
+                border: 'none',
+                boxShadow: 'none',
+                // Ensure long strings (URLs, errors) wrap properly
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+                whiteSpace: 'pre-wrap',
+                boxSizing: 'border-box',
+                // Adjust width based on role: User messages are constrained, AI takes full width minus a tiny margin
+                width: msg.role === 'user' ? 'fit-content' : '99%',
+                maxWidth: msg.role === 'user' ? '85%' : '99%'
             }}>
               {msg.role === 'user' ? (
                 <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
               ) : (
-                <div className="markdown-content">
+                <div className="markdown-content" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm]}
                     components={{
@@ -328,10 +343,13 @@ Provide concise, helpful, and accurate suggestions. If you provide code, always 
             color: '#ef4444',
             fontSize: '13px',
             display: 'flex',
-            gap: '8px'
+            gap: '8px',
+            // Ensure long error messages (API errors, stack traces) wrap
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere'
           }}>
             <AlertCircle size={16} style={{ flexShrink: 0 }} />
-            <span>{error}</span>
+            <span style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{error}</span>
           </div>
         )}
         <div ref={messagesEndRef} />
