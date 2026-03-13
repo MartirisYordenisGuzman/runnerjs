@@ -30,11 +30,12 @@ export const LogRenderer = ({ log, highlighting = true }: RendererProps) => {
   
   return (
     <div style={{ 
-      display: 'inline-block', // Keep arguments on same line but allow internal breaks
+      display: 'block', // Allow children to wrap correctly
       color: isErr ? 'var(--text-error)' : 'var(--text-primary)',
       opacity: log.isCaptured ? 0.8 : 1,
       width: '100%',
-      whiteSpace: 'pre'
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-word'
     }}>
       {log.value.map((val, i) => {
         const tokens = inspect(val);
@@ -48,7 +49,8 @@ export const LogRenderer = ({ log, highlighting = true }: RendererProps) => {
                 key={j} 
                 style={{ 
                   color: highlighting ? (Colors[token.type] || 'inherit') : 'inherit',
-                  whiteSpace: 'pre'
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word'
                 }}
               >
                 {token.value}
