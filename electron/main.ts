@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as https from 'https';
 
 import { SandboxService } from '../src/engine/sandbox';
-import { onConsoleLog, onWorkerStatus } from '../src/core/event-bus';
+import { onConsoleLog, onWorkerStatus, onConsoleClear } from '../src/core/event-bus';
 import { AppSettings, Snippet, SessionData, ChatMessage } from '../src/shared/ipc';
 
 let win: BrowserWindow | null = null;
@@ -527,6 +527,12 @@ ipcMain.handle('get-system-fonts', async () => {
 onConsoleLog((logData: unknown) => {
   if (win && !win.isDestroyed()) {
     win.webContents.send('console-output', logData);
+  }
+});
+
+onConsoleClear(() => {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('console-output', { type: 'clear', timestamp: Date.now(), value: [] });
   }
 });
 

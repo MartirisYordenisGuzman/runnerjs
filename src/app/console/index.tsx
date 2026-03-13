@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, ChevronRight, ChevronDown } from 'lucide-react';
 import type { ConsoleLogMessage } from '../../shared/ipc';
 
 interface ConsolePanelProps {
@@ -14,6 +14,212 @@ interface ConsolePanelProps {
   showConsoleHeader?: boolean;
   onExplain?: () => void;
 }
+
+const ConsoleTable = ({ data, highlighting }: { data: any, highlighting: boolean }) => {
+  if (!data || !data.rows || data.rows.length === 0) return null;
+
+  return (
+    <div style={{ 
+      margin: '8px 0', 
+      border: '1px solid var(--border-color)', 
+      borderRadius: '6px', 
+      overflow: 'hidden',
+      maxWidth: '100%',
+      backgroundColor: 'rgba(255, 255, 255, 0.03)'
+    }}>
+      <table style={{ 
+        width: '100%', 
+        borderCollapse: 'collapse', 
+        fontSize: '12px',
+        textAlign: 'left'
+      }}>
+        <thead>
+          <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', borderBottom: '1px solid var(--border-color)' }}>
+            {data.columns.map((col: string) => (
+              <th key={col} style={{ padding: '6px 10px', color: 'var(--text-muted)', fontWeight: 600 }}>{col}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.rows.map((row: any, i: number) => (
+            <tr key={i} style={{ borderBottom: i < data.rows.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+              {data.columns.map((col: string) => (
+                <td key={col} style={{ padding: '4px 10px', borderRight: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                  <ConsoleValue value={row[col]} highlighting={highlighting} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const ObjectInspector = ({ 
+  data, 
+  depth = 0, 
+  label, 
+  highlighting = true,
+  isCaptured = false
+}: { 
+  data: any, 
+  depth?: number, 
+  label?: string, 
+  highlighting?: boolean,
+  isCaptured?: boolean
+}) => {
+  const [isExpanded, setIsExpanded] = useState(depth === 0 && !label); // Auto-expand root if no label
+  const itemType = data?.type;
+  const itemValue = data?.value;
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+  };
+
+  const renderLabel = () => {
+    if (!label) return null;
+    return (
+      <span style={{ color: highlighting ? '#66d9ef' : 'inherit', marginRight: '4px' }}>
+        {label}:
+      </span>
+    );
+  };
+
+  const renderSummary = () => {
+    if (itemType === 'circular') return <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>[Circular]</span>;
+    if (itemType === 'promise') return <span style={{ color: '#ae81ff' }}>Promise {'{ <pending> }'}</span>;
+    if (itemType === 'function') return <span style={{ color: '#66d9ef', fontStyle: 'italic' }}>ƒ {data.value}()</span>;
+    if (itemType === 'date') return <span style={{ color: '#e6db74' }}>Date({data.value})</span>;
+
+    if (itemType === 'array') {
+      return (
+        <span style={{ color: 'var(--text-muted)' }}>
+          Array({itemValue.length}) {isExpanded ? '' : '[...]'}
+        </span>
+      );
+    }
+
+    if (itemType === 'object') {
+      const className = data.className ? `${data.className} ` : '';
+      const keys = Object.keys(itemValue || {});
+      return (
+        <span style={{ color: 'var(--text-muted)' }}>
+          {className}{'{'} {isExpanded ? '' : (keys.length > 0 ? '...' : '')} {'}'}
+        </span>
+      );
+    }
+
+    if (itemType === 'map') {
+      return <span style={{ color: 'var(--text-muted)' }}>Map({data.size}) {isExpanded ? '' : '{...}'}</span>;
+    }
+
+    if (itemType === 'set') {
+      return <span style={{ color: 'var(--text-muted)' }}>Set({data.size}) {isExpanded ? '' : '{...}'}</span>;
+    }
+
+    return <ConsoleValue value={data} highlighting={highlighting} isCaptured={isCaptured} />;
+  };
+
+  const isExpandable = ['object', 'array', 'map', 'set'].includes(itemType) && itemType !== 'circular';
+
+  if (!isExpandable) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'baseline' }}>
+        {renderLabel()}
+        {renderSummary()}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+      <div 
+        onClick={toggle}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          cursor: 'pointer', 
+          userSelect: 'none',
+          padding: '1px 0'
+        }}
+      >
+        <span style={{ marginRight: '4px', opacity: 0.6, display: 'flex', alignItems: 'center' }}>
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </span>
+        {renderLabel()}
+        {renderSummary()}
+      </div>
+
+      {isExpanded && (
+        <div style={{ 
+          marginLeft: '16px', 
+          borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
+          paddingLeft: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '2px'
+        }}>
+          {itemType === 'array' && itemValue.map((item: any, i: number) => (
+            <ObjectInspector 
+              key={i} 
+              data={item} 
+              depth={depth + 1} 
+              label={String(i)} 
+              highlighting={highlighting} 
+              isCaptured={isCaptured} 
+            />
+          ))}
+          
+          {itemType === 'object' && Object.entries(itemValue || {}).map(([key, val]) => (
+            <ObjectInspector 
+              key={key} 
+              data={val} 
+              depth={depth + 1} 
+              label={key} 
+              highlighting={highlighting} 
+              isCaptured={isCaptured} 
+            />
+          ))}
+
+          {itemType === 'map' && (itemValue as any[]).map((entry, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+               <div style={{ flexShrink: 0 }}>
+                 <ObjectInspector 
+                    data={entry.key} 
+                    depth={depth + 1} 
+                    highlighting={highlighting} 
+                    isCaptured={isCaptured} 
+                  />
+               </div>
+               <span style={{ color: highlighting ? '#ae81ff' : 'inherit', opacity: 0.7 }}>⇒</span>
+               <div style={{ flex: 1 }}>
+                 <ObjectInspector 
+                    data={entry.value} 
+                    depth={depth + 1} 
+                    highlighting={highlighting} 
+                    isCaptured={isCaptured} 
+                  />
+               </div>
+            </div>
+          ))}
+
+          {itemType === 'set' && (itemValue as any[]).map((val, i) => (
+            <ObjectInspector 
+              key={i} 
+              data={val} 
+              depth={depth + 1} 
+              label={String(i)} 
+              highlighting={highlighting} 
+              isCaptured={isCaptured} 
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ConsoleValue = ({ 
   value, 
@@ -62,7 +268,6 @@ const ConsoleValue = ({
       return <span style={{ color: 'var(--text-primary)', fontWeight: isError ? 'bold' : 'normal' }}>{strValue}</span>;
     }
 
-    // Use yellow color and ALWAYS use quotes as requested by user
     return <span style={{ color: highlighting ? '#e6db74' : 'inherit' }}>"{strValue}"</span>;
   }
   
@@ -74,51 +279,17 @@ const ConsoleValue = ({
     return <span style={{ color: highlighting ? '#f92672' : 'inherit' }}>{String(itemValue)}</span>;
   }
 
-  if (itemType === 'array' && Array.isArray(itemValue)) {
-    const bracketColor = highlighting ? '#66d9ef' : 'inherit';
+  if (['object', 'array', 'map', 'set', 'function', 'date', 'promise', 'circular'].includes(itemType)) {
     return (
-      <span style={{ color: 'inherit' }}>
-        <span style={{ color: bracketColor }}>[</span>
-        {itemValue.length > 0 && <span> </span>}
-        {itemValue.map((v, i) => (
-          <span key={i}>
-            <ConsoleValue value={v} highlighting={highlighting} isCaptured={isCaptured} />
-            {i < itemValue.length - 1 && <span style={{ color: 'inherit' }}>, </span>}
-          </span>
-        ))}
-        {itemValue.length > 0 && <span> </span>}
-        <span style={{ color: bracketColor }}>]</span>
-      </span>
+      <ObjectInspector 
+        data={value} 
+        highlighting={highlighting} 
+        isCaptured={isCaptured} 
+      />
     );
   }
 
-  if (itemType === 'object' && typeof itemValue === 'object' && itemValue !== null) {
-    const braceColor = highlighting ? '#66d9ef' : 'inherit';
-    const entries = Object.entries(itemValue as Record<string, unknown>);
-    
-    if (entries.length === 0) {
-      return <span style={{ color: braceColor }}>{'{ }'}</span>;
-    }
-
-    return (
-      <span style={{ color: 'inherit' }}>
-        <span style={{ color: braceColor }}>{'{'}</span>
-        {' '}
-        {entries.map(([key, val], i) => (
-          <span key={key}>
-            <span style={{ color: highlighting ? '#66d9ef' : 'inherit' }}>{key}</span>
-            <span style={{ color: 'inherit' }}>: </span>
-            <ConsoleValue value={val} highlighting={highlighting} isCaptured={isCaptured} />
-            {i < entries.length - 1 && <span style={{ color: 'inherit' }}>, </span>}
-          </span>
-        ))}
-        {' '}
-        <span style={{ color: braceColor }}>{'}'}</span>
-      </span>
-    );
-  }
-
-  if (itemType === 'serialized' || itemType === 'object') {
+  if (itemType === 'serialized') {
      return <span style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>{String(itemValue)}</span>;
   }
   
@@ -259,90 +430,111 @@ export function ConsolePanel({
             <Sparkles size={16} />
           </button>
         )}
-        {processedLogs.map((log, k) => {
-          let color = 'var(--text-primary)';
-          let badgeBg = 'transparent';
-          let badgeText = '';
-          const isStandardLog = log.type === 'log';
-          const isCaptured = log.isCaptured;
-          const isError = log.type === 'error';
-          
-          if (log.type === 'warn') { color = 'var(--color-warn)'; badgeBg = 'rgba(234, 179, 8, 0.1)'; badgeText = 'WARN'; }
-          if (log.type === 'error') { 
-            // RunJS style: Light text, no badge, no background
-            color = 'var(--text-primary)'; 
-            badgeBg = 'transparent'; 
-            badgeText = ''; 
-          }
-          if (log.type === 'info') { color = 'var(--color-info)'; badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeText = 'INFO'; }
-          if (log.type === 'log') { color = isCaptured ? 'var(--text-muted)' : 'var(--color-log)'; }
+        {(() => {
+          let currentGroupDepth = 0;
+          return processedLogs.map((log, k) => {
+            let color = 'var(--text-primary)';
+            let badgeBg = 'transparent';
+            let badgeText = '';
+            const isStandardLog = log.type === 'log';
+            const isCaptured = log.isCaptured;
+            const isError = log.type === 'error';
+            
+            if (log.type === 'warn') { color = 'var(--color-warn)'; badgeBg = 'rgba(234, 179, 8, 0.1)'; badgeText = 'WARN'; }
+            if (log.type === 'error') { 
+              color = 'var(--text-primary)'; 
+              badgeBg = 'transparent'; 
+              badgeText = ''; 
+            }
+            if (log.type === 'info') { color = 'var(--color-info)'; badgeBg = 'rgba(59, 130, 246, 0.1)'; badgeText = 'INFO'; }
+            if (log.type === 'log') { color = isCaptured ? 'var(--text-muted)' : 'var(--color-log)'; }
+            if (log.type === 'group') { color = 'var(--accent-color)'; }
 
-          const topOffset = matchLines && log.line ? ((log.line - 1) * finalLineHeight) : undefined;
+            // Handle depth changes
+            const myDepth = currentGroupDepth;
+            if (log.type === 'group') currentGroupDepth++;
+            if (log.type === 'groupEnd') {
+              currentGroupDepth = Math.max(0, currentGroupDepth - 1);
+              return null; // Don't render groupEnd itself
+            }
 
-          return (
-            <div key={k} className={`log-entry ${log.type}`} style={{ 
-              color: highlighting ? color : 'var(--text-primary)', 
-              padding: (isStandardLog || isError) ? '0px 0' : '6px 10px',
-              backgroundColor: (isStandardLog || isError) ? 'transparent' : badgeBg,
-              borderRadius: '6px',
-              borderLeft: (!isStandardLog && !isError) ? `3px solid ${color}` : 'none',
-              display: 'flex',
-              gap: '8px',
-              alignItems: 'flex-start',
-              width: matchLines ? (isCaptured ? 'auto' : 'calc(100% - 40px)') : '100%',
-              maxWidth: '100%',
-              flexShrink: 0,
-              position: matchLines && log.line ? 'absolute' : 'relative',
-              top: topOffset !== undefined ? `${topOffset}px` : 'auto',
-              opacity: isCaptured ? 0.8 : 1,
-              fontStyle: isCaptured ? 'italic' : 'normal',
-              minHeight: `${finalLineHeight}px`,
-              lineHeight: `${finalLineHeight}px`,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'normal',
-              overflow: 'visible',
-              marginBottom: isError ? '12px' : '0'
-            }}>
-              {badgeText !== '' && (
-                <span style={{ 
-                  fontSize: '10px', 
-                  fontWeight: 'bold', 
-                  padding: '2px 6px', 
-                  borderRadius: '4px',
-                  backgroundColor: color,
-                  color: '#000',
-                  marginTop: '0px',
-                  flexShrink: 0
-                }}>
-                  {badgeText}
-                </span>
-              )}
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'row', 
-                flexWrap: 'wrap',
-                gap: isCaptured ? '6px' : '8px', 
-                overflow: 'visible',
-                flex: 1,
-                alignItems: 'baseline',
+            const topOffset = matchLines && log.line ? ((log.line - 1) * finalLineHeight) : undefined;
+
+            return (
+              <div key={k} className={`log-entry ${log.type}`} style={{ 
+                color: highlighting ? color : 'var(--text-primary)', 
+                padding: (isStandardLog || isError) ? '0px 0' : '2px 10px',
+                backgroundColor: (isStandardLog || isError) ? 'transparent' : badgeBg,
+                borderRadius: '6px',
+                borderLeft: (!isStandardLog && !isError && log.type !== 'table' && log.type !== 'group') ? `3px solid ${color}` : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                alignItems: 'flex-start',
+                width: matchLines ? (isCaptured ? 'auto' : 'calc(100% - 40px)') : '100%',
+                maxWidth: '100%',
+                flexShrink: 0,
+                position: matchLines && log.line ? 'absolute' : 'relative',
+                top: topOffset !== undefined ? `${topOffset}px` : 'auto',
+                opacity: isCaptured ? 0.8 : 1,
+                fontStyle: isCaptured ? 'italic' : 'normal',
+                fontWeight: log.type === 'group' ? 'bold' : 'normal',
+                minHeight: `${finalLineHeight}px`,
+                lineHeight: `${finalLineHeight}px`,
                 whiteSpace: 'pre-wrap',
-                overflowWrap: 'break-word',
-                wordBreak: 'normal'
+                wordBreak: 'normal',
+                overflow: 'visible',
+                marginBottom: isError ? '12px' : '0',
+                marginLeft: matchLines ? 0 : `${myDepth * 20}px`,
+                paddingLeft: (log.type === 'group' && !matchLines) ? '0' : undefined
               }}>
-                {log.value.map((val, m) => (
-                  <div key={m} style={{ display: 'inline-block', whiteSpace: 'pre-wrap', flexShrink: 0 }}>
-                    <ConsoleValue 
-                      value={val} 
-                      highlighting={highlighting} 
-                      isError={isError} 
-                      isCaptured={isCaptured} 
-                    />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline', width: '100%' }}>
+                  {badgeText !== '' && (
+                    <span style={{ 
+                      fontSize: '10px', 
+                      fontWeight: 'bold', 
+                      padding: '2px 6px', 
+                      borderRadius: '4px',
+                      backgroundColor: color,
+                      color: '#000',
+                      marginTop: '0px',
+                      flexShrink: 0
+                    }}>
+                      {badgeText}
+                    </span>
+                  )}
+                  {log.type === 'group' && <span style={{ color: 'var(--accent-color)', opacity: 0.7, marginRight: '4px' }}>▼</span>}
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'row', 
+                    flexWrap: 'wrap',
+                    gap: isCaptured ? '6px' : '8px', 
+                    overflow: 'visible',
+                    flex: 1,
+                    alignItems: 'baseline',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'break-word',
+                    wordBreak: 'normal'
+                  }}>
+                    {log.value.map((val, m) => (
+                      <div key={m} style={{ display: 'inline-block', whiteSpace: 'pre-wrap', flexShrink: 0 }}>
+                        <ConsoleValue 
+                          value={val} 
+                          highlighting={highlighting} 
+                          isError={isError} 
+                          isCaptured={isCaptured} 
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+                {log.type === 'table' && log.table && (
+                  <ConsoleTable data={log.table} highlighting={highlighting} />
+                )}
               </div>
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
       </div>
 
       {showConsoleHeader && (

@@ -427,7 +427,18 @@ export function Workspace() {
       setMarkers(data.success ? [] : parseErrorStack(data.stack || data.error || ''));
     });
     window.electronAPI.onConsoleOutput((log) => {
-      setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [...t.logs, log] } : t));
+      if (log.type === 'clear') {
+        setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, logs: [] } : t));
+        return;
+      }
+      setTabs(prev => {
+        return prev.map(t => {
+          if (t.id === activeTabId) {
+            return { ...t, logs: [...t.logs, log] };
+          }
+          return t;
+        });
+      });
     });
     window.electronAPI.onWorkerStatus(status => {
       console.log('[Workspace] Worker status updated:', status);

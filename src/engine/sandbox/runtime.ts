@@ -11,43 +11,105 @@ import type { AppSettings } from '../../shared/ipc';
  * It manages the execution of user code, intercepts logs, and sends telemetry back to parent.
  */
 
-function serializeValue(value: unknown, depth = 0): { type: string, value: unknown } {
-  const type = value === null ? 'null' : typeof value;
+// Track time labels
+const timers = new Map<string, number>();
+
+interface SerializedValue {
+  type: string;
+  value: unknown;
+  className?: string;
+  size?: number;
+  signature?: string;
+}
+
+function serializeValue(value: unknown, depth = 0, seen = new WeakSet()): SerializedValue {
+  if (value === null) return { type: 'null', value: null };
+  if (value === undefined) return { type: 'undefined', value: undefined };
+
+  const type = typeof value;
   
-  if (type === 'string' || type === 'number' || type === 'boolean' || value === null || value === undefined) {
+  if (type === 'string' || type === 'number' || type === 'boolean') {
     return { type, value };
   }
 
-  // Recursive path for plain objects and arrays
-  if (depth < 3) {
-    if (Array.isArray(value)) {
-      return {
-        type: 'array',
-        value: value.map(item => serializeValue(item, depth + 1))
-      };
-    }
-    
-    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
-      const obj: Record<string, unknown> = {};
-      for (const key of Object.keys(value as object)) {
-        obj[key] = serializeValue((value as Record<string, unknown>)[key], depth + 1);
-      }
-      return { type: 'object', value: obj };
-    }
+  if (type === 'function') {
+    const fn = value as Function;
+    return { 
+      type: 'function', 
+      value: fn.name || '(anonymous)',
+      signature: fn.toString().slice(0, 100) + (fn.toString().length > 100 ? '...' : '')
+    };
   }
 
-  try {
+  if (value instanceof Date) {
+    return { type: 'date', value: value.toISOString() };
+  }
+
+  if (value instanceof Promise) {
+    return { type: 'promise', value: '[Promise]' };
+  }
+
+  // Handle circular references
+  if (typeof value === 'object') {
+    if (seen.has(value)) {
+      return { type: 'circular', value: '[Circular]' };
+    }
+    seen.add(value);
+  }
+
+  if (depth >= 5) {
     return {
       type: 'serialized',
-      value: util.inspect(value, {
-        depth: 3,
-        colors: false,
-        maxArrayLength: 50
-      })
+      value: util.inspect(value, { depth: 0, colors: false })
     };
-  } catch {
-    return { type: 'serialized', value: "[Unserializable Value]" };
   }
+
+  if (value instanceof Map) {
+    const entries: any[] = [];
+    value.forEach((v, k) => {
+      entries.push({
+        key: serializeValue(k, depth + 1, seen),
+        value: serializeValue(v, depth + 1, seen)
+      });
+    });
+    return { type: 'map', value: entries, size: value.size };
+  }
+
+  if (value instanceof Set) {
+    const values: any[] = [];
+    value.forEach(v => {
+      values.push(serializeValue(v, depth + 1, seen));
+    });
+    return { type: 'set', value: values, size: value.size };
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      value: value.map(item => serializeValue(item, depth + 1, seen))
+    };
+  }
+  
+  if (typeof value === 'object') {
+    const obj: Record<string, unknown> = {};
+    const keys = Object.keys(value as object);
+    // Include non-enumerable properties if helpful? No, stick to own keys for now to match console.log
+    for (const key of keys) {
+      obj[key] = serializeValue((value as Record<string, unknown>)[key], depth + 1, seen);
+    }
+    
+    // Check for special constructors
+    const constructorName = (value as object).constructor?.name;
+    const isPlainObject = !constructorName || constructorName === 'Object';
+    
+    return { 
+      type: 'object', 
+      value: obj,
+      className: isPlainObject ? undefined : constructorName
+    };
+  }
+
+  return { type: 'serialized', value: String(value) };
 }
 
 // Track sync phase for Match Lines
@@ -65,18 +127,26 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
   }
 
   // Intercept console
-  const captureMethod = (type: string) => {
-    return (...args: unknown[]) => {
-      let line: number | undefined = undefined;
-      let finalArgs = args;
+  const extractMetadata = (args: unknown[]) => {
+    let line: number | undefined = undefined;
+    let finalArgs = args;
 
-      if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null && '__runner_line' in args[0]) {
-        line = (args[0] as { __runner_line: number }).__runner_line;
+    if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
+      const firstArg = args[0] as any;
+      if ('__runner_metadata__' in firstArg) {
+        line = firstArg.__runner_metadata__.line;
         finalArgs = args.slice(1);
       }
+    }
+    return { line, finalArgs };
+  };
+
+  const captureMethod = (type: string) => {
+    return (...args: unknown[]) => {
+      const { line, finalArgs } = extractMetadata(args);
 
       // Use util.format only if templates are likely present, otherwise preserve types for highlighting
-      let processedValues: { type: string, value: unknown }[];
+      let processedValues: SerializedValue[];
       if (typeof finalArgs[0] === 'string' && finalArgs[0].includes('%') && finalArgs.length > 1) {
         processedValues = [{ type: 'string', value: util.format(...finalArgs) }];
       } else {
@@ -90,15 +160,161 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
     };
   };
 
-  const interceptedConsole: Record<string, (...args: unknown[]) => void> = {
-    log: captureMethod('log'),
-    warn: captureMethod('warn'),
-    error: captureMethod('error'),
-    info: captureMethod('info'),
-    debug: captureMethod('debug'),
-    clear: () => process.send?.({ type: 'clear' }),
-    table: captureMethod('log'),
+  const setupConsole = () => {
+    const interceptedConsole: Record<string, any> = {};
+
+    const methods: Array<keyof Console> = ['log', 'warn', 'error', 'info', 'debug', 'dir'];
+    methods.forEach(method => {
+      interceptedConsole[method] = captureMethod(method as string);
+    });
+
+    interceptedConsole.clear = () => process.send?.({ type: 'clear' });
+
+    interceptedConsole.table = (...args: any[]) => {
+      const { line, finalArgs } = extractMetadata(args);
+      const data = finalArgs[0];
+      
+      let tableData: any = null;
+      if (data && typeof data === 'object') {
+        const rows: any[] = [];
+        const columns = new Set<string>();
+        columns.add('(index)');
+
+        if (Array.isArray(data)) {
+          data.forEach((item, index) => {
+            const row: any = { '(index)': index };
+            if (item && typeof item === 'object') {
+              Object.keys(item).forEach(key => {
+                columns.add(key);
+                row[key] = serializeValue(item[key]);
+              });
+            } else {
+              columns.add('Values');
+              row['Values'] = serializeValue(item);
+            }
+            rows.push(row);
+          });
+        } else {
+          Object.keys(data).forEach(key => {
+            const item = data[key];
+            const row: any = { '(index)': key };
+            if (item && typeof item === 'object') {
+              Object.keys(item).forEach(k => {
+                columns.add(k);
+                row[k] = serializeValue(item[k]);
+              });
+            } else {
+              columns.add('Values');
+              row['Values'] = serializeValue(item);
+            }
+            rows.push(row);
+          });
+        }
+
+        tableData = {
+          columns: Array.from(columns),
+          rows
+        };
+      }
+
+      process.send?.({
+        type: 'log',
+        payload: {
+          type: 'table',
+          value: [],
+          table: tableData,
+          timestamp: Date.now(),
+          line
+        }
+      });
+    };
+
+    interceptedConsole.time = (...args: any[]) => {
+      const { finalArgs } = extractMetadata(args);
+      const label = String(finalArgs[0] || 'default');
+      timers.set(label, performance.now());
+    };
+
+    interceptedConsole.timeEnd = (...args: any[]) => {
+      const { line, finalArgs } = extractMetadata(args);
+      const label = String(finalArgs[0] || 'default');
+      
+      const start = timers.get(label);
+      if (start) {
+        const duration = performance.now() - start;
+        timers.delete(label);
+        process.send?.({
+          type: 'log',
+          payload: {
+            type: 'log',
+            value: [{ type: 'string', value: `${label}: ${duration.toFixed(3)}ms` }],
+            timestamp: Date.now(),
+            line
+          }
+        });
+      } else {
+        process.send?.({
+          type: 'log',
+          payload: {
+            type: 'warn',
+            value: [{ type: 'string', value: `Timer '${label}' does not exist` }],
+            timestamp: Date.now(),
+            line
+          }
+        });
+      }
+    };
+
+    interceptedConsole.group = (...args: any[]) => {
+      const { line, finalArgs } = extractMetadata(args);
+      process.send?.({
+        type: 'log',
+        payload: {
+          type: 'group',
+          value: finalArgs.map(arg => serializeValue(arg)),
+          timestamp: Date.now(),
+          line
+        }
+      });
+    };
+
+    interceptedConsole.groupCollapsed = (...args: any[]) => {
+      interceptedConsole.group(...args);
+    };
+
+    interceptedConsole.groupEnd = () => {
+      process.send?.({
+        type: 'log',
+        payload: {
+          type: 'groupEnd',
+          value: [],
+          timestamp: Date.now()
+        }
+      });
+    };
+
+    interceptedConsole.groupCollapsed = (...args: any[]) => {
+      interceptedConsole.group(...args);
+    };
+
+    interceptedConsole.groupEnd = () => {
+      process.send?.({
+        type: 'log',
+        payload: {
+          type: 'groupEnd',
+          value: [],
+          timestamp: Date.now()
+        }
+      });
+    };
+
+    return interceptedConsole;
   };
+
+  const interceptedConsole = setupConsole();
+
+  let lastLoopCheck = performance.now();
+  let loopStart = performance.now();
 
   // Setup global sandbox
   const sandbox = {
@@ -110,6 +326,32 @@ const setupRuntime = (options: { cwd?: string; env?: Record<string, string>; adv
       exit: (code?: number) => process.exit(code)
     },
     console: { ...console, ...interceptedConsole },
+    setTimeout: (callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
+      const d = Math.max(delay || 0, 10);
+      return setTimeout(callback, d, ...args);
+    },
+    setInterval: (callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
+      const d = Math.max(delay || 0, 10);
+      return setInterval(callback, d, ...args);
+    },
+    __loopStart: () => {
+      loopStart = performance.now();
+      lastLoopCheck = loopStart;
+    },
+    __checkLoop: (line?: number) => {
+      const now = performance.now();
+      if (now - lastLoopCheck > 10) {
+        lastLoopCheck = now;
+        if (now - loopStart > 2000) {
+          const msg = 'RangeError: Potential infinite loop: exceeded 2000ms';
+          if (line) {
+            // Emitting as a console error ensures it shows up in the console UI at the correct line
+            (interceptedConsole as any).error({ __runner_line: line }, msg);
+          }
+          throw new Error(msg);
+        }
+      }
+    },
     __capture: (line: number, value: unknown) => {
       if (value === undefined && !advanced?.showUndefined) return value;
       
@@ -153,6 +395,9 @@ process.on('message', (message: { type: string, code: string, cwd?: string, env?
   if (message.type === 'execute') {
     const { code, cwd, env, advanced } = message;
     const context = setupRuntime({ cwd, env, advanced });
+
+    // Reset loop timer
+    (context as any).__loopStart?.();
 
     try {
       const script = new vm.Script(code);

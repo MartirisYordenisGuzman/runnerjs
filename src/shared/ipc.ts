@@ -4,11 +4,15 @@
 
 // Format of intercepted console outputs from the sandbox
 export interface ConsoleLogMessage {
-  type: 'log' | 'warn' | 'error' | 'info' | 'debug';
+  type: 'log' | 'warn' | 'error' | 'info' | 'debug' | 'table' | 'group' | 'groupEnd' | 'time' | 'timeEnd' | 'clear' | 'dir';
   value: unknown[];
   timestamp: number;
   line?: number;      // Line number for Match Lines alignment
   isCaptured?: boolean; // True if it's an automatically captured expression result
+  table?: {
+    columns: string[];
+    rows: Array<Record<string, unknown>>;
+  };
 }
 
 // Format of successful/failed execution from the sandbox

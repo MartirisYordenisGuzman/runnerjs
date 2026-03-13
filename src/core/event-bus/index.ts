@@ -15,6 +15,9 @@ export const onCodeChanged = (cb: (code: string) => void) => eventBus.on('code:c
 export const emitConsoleLog = (logData: unknown) => eventBus.emit('console:log', logData);
 export const onConsoleLog = (cb: (logData: unknown) => void) => eventBus.on('console:log', cb);
 
+export const emitConsoleClear = () => eventBus.emit('console:clear');
+export const onConsoleClear = (cb: () => void) => eventBus.on('console:clear', cb);
+
 export const emitExecutionComplete = (executionData: unknown) => eventBus.emit('execution:complete', executionData);
 export const onExecutionComplete = (cb: (executionData: unknown) => void) => eventBus.on('execution:complete', cb);
 

@@ -3,7 +3,7 @@ import * as path from 'path';
 import { transform as sucraseTransform } from 'sucrase';
 import * as Babel from '@babel/standalone';
 import type { ExecutionCompleteMessage, AppSettings } from '../../shared/ipc';
-import { emitExecutionComplete, emitConsoleLog, emitWorkerStatus } from '../../core/event-bus';
+import { emitExecutionComplete, emitConsoleLog, emitWorkerStatus, emitConsoleClear } from '../../core/event-bus';
 
 // Module-level variable to ensure it's a true singleton across the Main process.
 let activeProcess: ChildProcess | null = null;
@@ -64,23 +64,9 @@ export class SandboxService {
       plugins.push(({ types: t }: { types: any }) => ({
         visitor: {
           "WhileStatement|ForStatement|DoWhileStatement|ForInStatement|ForOfStatement"(path: any) {
-            const id = Math.random().toString(36).slice(2, 7);
-            const start = t.identifier(`__loopStart_${id}`);
-            const counter = t.identifier(`__loopIter_${id}`);
-            
-            const setup = t.variableDeclaration('let', [
-              t.variableDeclarator(start, t.callExpression(t.memberExpression(t.identifier('Date'), t.identifier('now')), [])),
-              t.variableDeclarator(counter, t.numericLiteral(0))
-            ]);
-
-            path.insertBefore(setup);
-            
-            const check = t.ifStatement(
-              t.logicalExpression('&&',
-                t.binaryExpression('===', t.binaryExpression('%', t.updateExpression('++', counter), t.numericLiteral(100)), t.numericLiteral(0)),
-                t.binaryExpression('>', t.binaryExpression('-', t.callExpression(t.memberExpression(t.identifier('Date'), t.identifier('now')), []), start), t.numericLiteral(2000))
-              ),
-              t.throwStatement(t.newExpression(t.identifier('Error'), [t.stringLiteral('Execution timed out (Loop Protection)')]))
+            const line = path.node.loc?.start.line || 0;
+            const check = t.expressionStatement(
+              t.callExpression(t.identifier('__checkLoop'), line > 0 ? [t.numericLiteral(line)] : [])
             );
 
             if (path.get('body').isBlockStatement()) {
@@ -105,13 +91,15 @@ export class SandboxService {
               t.isIdentifier(callee.object) &&
               callee.object.name === 'console' &&
               t.isIdentifier(callee.property) &&
-              ['log', 'warn', 'error', 'info', 'debug'].includes(callee.property.name)
+              ['log', 'warn', 'error', 'info', 'debug', 'table', 'dir', 'time', 'timeEnd', 'group', 'groupEnd'].includes(callee.property.name)
             ) {
               const line = path.node.loc?.start.line || 0;
               if (line > 0) {
                 path.node.arguments.unshift(
                   t.objectExpression([
-                    t.objectProperty(t.identifier('__runner_line'), t.numericLiteral(line))
+                    t.objectProperty(t.identifier('__runner_metadata__'), t.objectExpression([
+                      t.objectProperty(t.identifier('line'), t.numericLiteral(line))
+                    ]))
                   ])
                 );
               }
@@ -237,11 +225,44 @@ export class SandboxService {
       emitWorkerStatus('running');
 
       let resolved = false;
+      let logCount = 0;
+      const MAX_LOGS = 1000;
+
+      // Hard timeout for the entire process (Level 2 protection)
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          console.warn('[SandboxService] Execution timed out (Hard Limit)');
+          this.stop(false); // Send warm warning the process was terminated
+          resolved = true;
+          const end = performance.now();
+          const payload: ExecutionCompleteMessage = {
+            success: false,
+            error: 'Execution timed out (5s limit exceeded)',
+            executionTimeMs: Math.round(end - start)
+          };
+          emitExecutionComplete(payload);
+          resolve(payload);
+        }
+      }, 5000);
 
       child.on('message', (message: { type: string, payload: any }) => {
         if (message.type === 'log') {
+          logCount++;
+          if (logCount > MAX_LOGS) {
+            if (logCount === MAX_LOGS + 1) {
+              emitConsoleLog({
+                type: 'warn',
+                value: ['[Console floouding detected] Log skipped to prevent UI freeze.'],
+                timestamp: Date.now()
+              });
+            }
+            return;
+          }
           emitConsoleLog(message.payload);
         } else if (message.type === 'capture') {
+          logCount++;
+          if (logCount > MAX_LOGS) return; // Silent for captures
+
           emitConsoleLog({
             type: 'log',
             value: [message.payload.value],
@@ -249,8 +270,11 @@ export class SandboxService {
             line: message.payload.line,
             isCaptured: true
           });
+        } else if (message.type === 'clear') {
+          emitConsoleClear();
         } else if (message.type === 'result') {
           resolved = true;
+          clearTimeout(timeout);
           const end = performance.now();
           const executionTimeMs = Math.round(end - start);
           const payload: ExecutionCompleteMessage = {
