@@ -73,6 +73,9 @@ const createInterceptedConsole = () => {
 
 const safeConsole = createInterceptedConsole();
 
+// Track if we are in the initial synchronous execution pass
+let isSyncPhase = true;
+
 /**
  * Determines if an expression result should be sent to the UI.
  * Filters out internal types like Timeout, Interval, etc.
@@ -127,13 +130,28 @@ const sandbox: Record<string, unknown> = {
     }
 
     if (shouldDisplayExpression(value)) {
-      parentPort?.postMessage({
-        type: 'capture',
-        payload: {
-          line,
-          value: serializeValue(value) // Safe serialization
-        }
-      });
+      if (isSyncPhase) {
+        // Initial pass: send as Match Lines result
+        parentPort?.postMessage({
+          type: 'capture',
+          payload: {
+            line,
+            value: serializeValue(value)
+          }
+        });
+      } else {
+        // Asynchronous pass: redirect to console output
+        parentPort?.postMessage({
+          type: 'log',
+          payload: {
+            type: 'log',
+            value: [serializeValue(value)],
+            timestamp: Date.now(),
+            line,
+            isCaptured: true
+          }
+        });
+      }
     }
 
     return value; // Return result for chains
@@ -161,6 +179,10 @@ try {
     displayErrors: true,
   });
 
+  // Signal that synchronous execution is complete. 
+  // Any further captures will be treated as async console logs.
+  isSyncPhase = false;
+
   // Notify the parent of the synchronous return value (serialized)
   parentPort?.postMessage({
     type: 'result',
@@ -171,6 +193,7 @@ try {
   });
 
 } catch (e: unknown) {
+  isSyncPhase = false; // Ensure it's false even on error
   parentPort?.postMessage({
     type: 'result',
     payload: {
