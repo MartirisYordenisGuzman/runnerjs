@@ -1,7 +1,9 @@
 {
   "name": "runjs-clone",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "A premium interactive scratchpad for JavaScript and TypeScript.",
+  "author": "Martiris",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev:ui": "vite",
@@ -16,6 +18,7 @@
   "build": {
     "appId": "com.martiris.runnerjs",
     "productName": "RunnerJS",
+    "copyright": "Copyright © 2026 Martiris",
     "directories": {
       "output": "release"
     },
@@ -26,8 +29,14 @@
     ],
     "win": {
       "target": [
-        "portable"
-      ]
+        "nsis"
+      ],
+      "icon": "src/assets/logo.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "RunnerJS"
     }
   },
   "dependencies": {

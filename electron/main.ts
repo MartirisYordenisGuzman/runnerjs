@@ -73,8 +73,11 @@ async function createWindow() {
     // win.webContents.closeDevTools();
 
   } else {
-    win.loadFile(path.join(__dirname, '../../dist/index.html')).catch((err) => {
-      console.error('[Main] Failed to load file:', err);
+    // Packaged production build
+    const indexPath = path.join(app.getAppPath(), 'dist/index.html');
+    console.log(`[Main] Loading production file: ${indexPath}`);
+    win.loadFile(indexPath).catch((err) => {
+      console.error('[Main] Failed to load production file:', err);
     });
   }
 
